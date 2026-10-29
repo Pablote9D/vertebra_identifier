@@ -206,7 +206,24 @@ def recortar(p, fraccion, rng):
 # Comparación fina: ICP rígido + distancia de Chamfer
 # ---------------------------------------------------------------------------
 
-_GIROS = [np.diag(s) for s in ([1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1])]
+_GIROS_4 = [np.diag(s) for s in ([1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1])]
+
+
+def _giros_24():
+    """Las 24 rotaciones que llevan ejes a ejes: además de invertir sentidos, permite que los
+    ejes principales de la consulta y la referencia queden intercambiados."""
+    import itertools
+    giros = list(_GIROS_4)
+    for perm in itertools.permutations(range(3)):
+        for signos in itertools.product((1, -1), repeat=3):
+            g = np.eye(3)[list(perm)] * np.array(signos)[:, None]
+            if np.linalg.det(g) > 0 and not any(np.array_equal(g, h) for h in giros):
+                giros.append(g)
+    return giros
+
+
+GIROS = {4: _GIROS_4, 24: _giros_24()}
+N_ORIENTACIONES = 4      # orientaciones iniciales de la etapa rápida (4 o 24)
 
 
 def _kabsch(a, b):
@@ -227,11 +244,12 @@ def _icp(x, ref, arbol, iters):
 
 
 def alinear_grueso(q, ref):
-    """Etapa rápida: prueba los 4 sentidos posibles de los ejes PCA y se queda con el mejor."""
+    """Etapa rápida: prueba las orientaciones iniciales (4 sentidos de los ejes PCA, o las 24
+    rotaciones entre ejes) y se queda con la mejor."""
     qs, rs = q[:N_GRUESO], ref[:N_GRUESO * 4]
     arbol = cKDTree(rs)
     mejor = (np.inf, None)
-    for g in _GIROS:
+    for g in GIROS[N_ORIENTACIONES]:
         x = _icp(qs @ g.T, rs, arbol, 4)
         d = arbol.query(x)[0].mean()
         if d < mejor[0]:
@@ -318,6 +336,8 @@ def codigo(region, pos):
 
 
 def identificar(args):
+    global N_ORIENTACIONES
+    N_ORIENTACIONES = args.orientaciones
     rng = np.random.default_rng(1)
     ind = cargar_indice(args.indice)
     q, dq = preparar(args.modelo, rng)
@@ -335,6 +355,8 @@ def identificar(args):
 
 def evaluar(args):
     """Deja afuera un individuo entero por vez y trata de ubicar sus vértebras con el resto."""
+    global N_ORIENTACIONES
+    N_ORIENTACIONES = args.orientaciones
     rng = np.random.default_rng(2)
     ind = cargar_indice(args.indice)
     total = esp_ok = exacta = mas_menos1 = top3 = 0
@@ -364,7 +386,7 @@ def evaluar(args):
         if any(r[0] == (e[0], e[2], e[3]) for r in res):
             top3 += 1
     print(f"\nEvaluación dejando un individuo afuera ({total} vértebras, "
-          f"recorte {args.recorte:.0%}, {time.time() - t0:.0f} s)\n")
+          f"recorte {args.recorte:.0%}, {args.orientaciones} orientaciones, {time.time() - t0:.0f} s)\n")
     print(f"  Especie correcta:            {esp_ok / total:6.1%}")
     print(f"  Posición exacta:             {exacta / total:6.1%}")
     print(f"  Posición con error ±1:       {mas_menos1 / total:6.1%}")
@@ -489,6 +511,8 @@ def main():
     s.add_argument("--indice", default="indice.npz")
     s.add_argument("--top", type=int, default=5)
     s.add_argument("--umbral", type=float, default=None, help="distancia en mm (sale de 'evaluar')")
+    s.add_argument("--orientaciones", type=int, choices=(4, 24), default=N_ORIENTACIONES,
+                   help="orientaciones iniciales de la alineación rápida")
     s.set_defaults(func=identificar)
 
     s = sub.add_parser("evaluar", help="medir precisión dejando un individuo afuera")
@@ -497,6 +521,8 @@ def main():
                    help="fracción a eliminar de cada consulta para simular fragmentos (ej. 0.3)")
     s.add_argument("--muestra", type=int, default=0,
                    help="evaluar solo N vértebras al azar (más rápido)")
+    s.add_argument("--orientaciones", type=int, choices=(4, 24), default=N_ORIENTACIONES,
+                   help="orientaciones iniciales de la alineación rápida")
     s.set_defaults(func=evaluar)
 
     args = ap.parse_args()
