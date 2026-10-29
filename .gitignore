@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+*.npz
+base_sintetica/
+.pytest_cache/
