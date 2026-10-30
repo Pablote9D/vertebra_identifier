@@ -71,15 +71,21 @@ def vertebra_sintetica(t, sp, iv, rng):
     return v @ q.T + rng.normal(0, 20, 3), np.vstack(fs)
 
 
-def generar_base(salida, individuos=4, semilla=42):
-    """Genera 3 especies con `individuos` individuos cada una y su metadata.csv.
-    Devuelve la cantidad de vértebras."""
+def generar_base(salida, individuos=4, semilla=42, n_especies=3):
+    """Genera `n_especies` especies con `individuos` individuos cada una y su metadata.csv.
+    Las 3 primeras son siempre las mismas; las demás tienen tamaño, largo, espina y cantidad de
+    cervicales al azar. Devuelve la cantidad de vértebras."""
     rng = np.random.default_rng(semilla)
     especies = {
         "ESPAAA": {"n": 13, "tam": 12, "largo": 0.9, "espina": 0.30},
         "ESPBBB": {"n": 15, "tam": 14, "largo": 1.1, "espina": 0.25},
         "ESPCCC": {"n": 15, "tam": 15, "largo": 1.0, "espina": 0.40},  # parecida a B a propósito
     }
+    extra = np.random.default_rng(semilla + 1000)      # aparte, para no cambiar las 3 primeras
+    for k in range(3, n_especies):
+        especies[f"ESP{k:03d}"] = {"n": int(extra.integers(11, 19)), "tam": float(extra.uniform(6, 30)),
+                                   "largo": float(extra.uniform(0.8, 1.2)),
+                                   "espina": float(extra.uniform(0.2, 0.45))}
     os.makedirs(os.path.join(salida, "mallas"), exist_ok=True)
     filas = []
     for esp, sp in especies.items():

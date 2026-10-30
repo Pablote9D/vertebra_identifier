@@ -24,7 +24,7 @@ from .verificacion import verificar
 
 
 def cmd_sintetico(args):
-    n = generar_base(args.salida, args.individuos, args.semilla)
+    n = generar_base(args.salida, args.individuos, args.semilla, args.especies)
     print(f"{n} vértebras sintéticas en {args.salida}")
 
 
@@ -126,6 +126,7 @@ def main(argv=None):
     s = sub.add_parser("sintetico", help="generar base de prueba")
     s.add_argument("--salida", default="base_sintetica")
     s.add_argument("--individuos", type=int, default=4)
+    s.add_argument("--especies", type=int, default=3, help="las 3 primeras son fijas; el resto, al azar")
     s.add_argument("--semilla", type=int, default=42)
     s.set_defaults(func=cmd_sintetico)
 
