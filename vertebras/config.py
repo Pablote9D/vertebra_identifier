@@ -5,7 +5,7 @@ N_DENSO = 15000          # puntos muestreados por modelo (para medir distancias 
 N_GRUESO = 300           # puntos usados en la etapa rápida de alineación
 N_FINO = 2000            # puntos usados en la alineación fina
 N_FINALISTAS = 12        # candidatas que pasan a la etapa fina
-MAX_SIN_PRESELECCION = 150   # con más referencias disponibles se preseleccionan por tamaño
+MAX_SIN_PRESELECCION = 200   # con más referencias disponibles se preseleccionan por tamaño
 N_PRESELECCION = 75          # referencias que pasan a la alineación (ver README, bases grandes)
 RECORTE_ICP = 0.9        # fracción de pares más cercanos usados en cada paso del ICP (motor scipy)
 # Motor open3d: distancia máxima de correspondencia, como fracción del radio medio de la referencia
