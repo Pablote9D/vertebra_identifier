@@ -78,3 +78,45 @@ def test_cli_identificar(base_chica, capsys):
               "--orientaciones", "4"])
     salida = capsys.readouterr().out
     assert "ESPAAA    C03" in salida
+
+
+def test_consultas_sin_referencia_no_se_cuentan(base_chica, tmp_path):
+    """Si una especie tiene un solo individuo, sus vértebras no tienen respuesta posible."""
+    z = dict(np.load(base_chica["indice"], allow_pickle=True))
+    quedan = [i for i, e in enumerate(z["etiquetas"]) if e[1] != "ESPAAA-002"]
+    for k in ("puntos", "normales", "descs", "etiquetas"):
+        z[k] = z[k][quedan]
+    ruta = str(tmp_path / "sin_par.npz")
+    np.savez_compressed(ruta, **z)
+    cfg.configurar("open3d", "plano", 4)
+    r = evaluar(ruta, muestra=3, nucleos=1)
+    assert len(r["sin_referencia"]) == 13
+    assert all(e[1] == "ESPAAA-001" for e in r["sin_referencia"])
+    assert all(d["consulta"][0] != "ESPAAA" for d in r["detalle"])
+    assert sum(pp["n"] for pp in r["por_posicion"].values()) == r["total"] == 3
+
+
+def test_resumen_por_posicion(base_chica):
+    cfg.configurar("open3d", "plano", 4)
+    r = evaluar(base_chica["indice"], muestra=4, nucleos=1)
+    assert r["sin_referencia"] == []
+    assert sum(pp["n"] for pp in r["por_posicion"].values()) == 4
+    for (reg, pos), pp in r["por_posicion"].items():
+        assert reg == "Cervical"
+        assert sum(pp["predicciones"].values()) == pp["n"]
+
+
+def test_indexar_con_limpieza_informa(base_chica, tmp_path):
+    import trimesh
+    from vertebras.mallas import escribir_ply
+    from vertebras.sintetico import _caja
+    # una pieza continua (las vértebras sintéticas son primitivas superpuestas, ver limpiar_piezas)
+    esfera = trimesh.creation.icosphere(subdivisions=3, radius=8.0)
+    v, f = np.asarray(esfera.vertices), np.asarray(esfera.faces)
+    cv, cf = _caja((60, 60, 60), (3, 3, 3))
+    (tmp_path / "m").mkdir()
+    escribir_ply(str(tmp_path / "m" / "sucia.ply"), np.vstack([v, cv]), np.vstack([f, cf + len(v)]))
+    ruta = _metadata(tmp_path, ["a,m/sucia.ply,ESPAAA,I1,Cervical,3,Sí"])
+    avisos = []
+    indexar(ruta, str(tmp_path / "i.npz"), avisar=avisos.append, limpiar=True)
+    assert "se quitó" in avisos[0] and "1 piezas sueltas" in avisos[0]

@@ -1,6 +1,7 @@
 """De malla a nube de puntos comparable: muestreo, marco PCA, normales, recorte, descriptor."""
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 from . import config as cfg
 from .mallas import leer_malla, o3d
@@ -67,10 +68,75 @@ def descriptor(p, rng, bins=24):
     return np.concatenate([np.log(ext + 1e-9), hist / bins])
 
 
-def preparar(ruta, rng, recorte=0.0, normales=False):
+def limpiar_piezas(v, f, pegada_mm=None):
+    """Quita piezas ajenas a la vértebra (marcadores, restos de segmentación, basura del escaneo).
+
+    Conserva la pieza de mayor área y las piezas pegadas a ella: aquellas con el 95% de sus
+    vértices a menos de `pegada_mm` de la principal (por defecto cfg.PIEZA_PEGADA_MM, o dos aristas
+    típicas si la malla es más gruesa). Así se mantienen los parches de superficie de una malla
+    partida y se descarta lo que sobresale o está suelto. No reordena caras: si no hay nada que
+    quitar, devuelve la malla tal cual. Devuelve (v, f, fracción de área quitada, piezas quitadas).
+
+    Pensada para escaneos, cuya superficie es una sola malla. Una pieza armada con partes
+    superpuestas que no comparten vértices (como las vértebras sintéticas) perdería partes."""
+    if f is None or len(f) == 0:
+        return v, f, 0.0, 0
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    # vértices repetidos (por ejemplo en costuras de textura) cuentan como uno solo
+    _, unico = np.unique(np.round(v, 6), axis=0, return_inverse=True)
+    unico = unico.ravel()
+    g = unico[f]
+    aristas = np.vstack([g[:, [0, 1]], g[:, [1, 2]], g[:, [2, 0]]])
+    n_u = unico.max() + 1
+    grafo = coo_matrix((np.ones(len(aristas)), (aristas[:, 0], aristas[:, 1])), shape=(n_u, n_u))
+    n_piezas, etiqueta_u = connected_components(grafo, directed=False)
+    etiqueta_cara = etiqueta_u[g[:, 0]]
+    con_caras = np.zeros(n_piezas, bool)
+    con_caras[etiqueta_cara] = True          # los vértices sin caras no cuentan como piezas
+    if con_caras.sum() == 1:
+        return v, f, 0.0, 0
+    a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+    area_cara = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+    area = np.bincount(etiqueta_cara, weights=area_cara, minlength=n_piezas)
+    principal = area.argmax()
+    if pegada_mm is None:
+        arista = np.median(np.linalg.norm(b - a, axis=1))
+        pegada_mm = max(cfg.PIEZA_PEGADA_MM, 2 * arista)
+    etiqueta_v = np.full(len(v), -1)
+    etiqueta_v[f.ravel()] = np.repeat(etiqueta_cara, 3)
+    usados = np.where(etiqueta_v >= 0)[0]
+    en_principal = usados[etiqueta_v[usados] == principal]
+    d = cKDTree(v[en_principal]).query(v[usados])[0]
+    # percentil 95 de la distancia a la pieza principal, por pieza
+    orden = np.lexsort((d, etiqueta_v[usados]))
+    lab_ord, d_ord = etiqueta_v[usados][orden], d[orden]
+    inicio = np.searchsorted(lab_ord, np.arange(n_piezas))
+    cuenta = np.bincount(lab_ord, minlength=n_piezas)
+    p95 = d_ord[np.minimum(inicio + (0.95 * (cuenta - 1)).astype(int), len(d_ord) - 1)]
+    conservar = p95 < pegada_mm
+    conservar[principal] = True
+    quitar = con_caras & ~conservar
+    if not quitar.any():
+        return v, f, 0.0, 0
+    caras = f[conservar[etiqueta_cara]]
+    quedan = np.unique(caras)
+    nuevo = np.full(len(v), -1)
+    nuevo[quedan] = np.arange(len(quedan))
+    quitada = 1 - area[conservar].sum() / area.sum()
+    return v[quedan], nuevo[caras], float(quitada), int(quitar.sum())
+
+
+def preparar(ruta, rng, recorte=0.0, normales=False, limpiar=False, info=None):
     """Nube de puntos en el marco PCA y su descriptor. Con normales=True devuelve también
-    las normales en ese marco (las necesita el ICP punto a plano en las referencias)."""
+    las normales en ese marco (las necesita el ICP punto a plano en las referencias).
+    Con limpiar=True quita antes las piezas ajenas (ver limpiar_piezas) y, si se pasa un
+    diccionario `info`, anota en él "area_quitada" (fracción) y "piezas_quitadas"."""
     v, f = leer_malla(ruta)
+    if limpiar:
+        v, f, quitada, piezas = limpiar_piezas(v, f)
+        if info is not None:
+            info.update(area_quitada=quitada, piezas_quitadas=piezas)
     p, n = muestrear_superficie(v, f, cfg.N_DENSO, rng, normales=True)
     if recorte > 0:
         p = recortar(p, recorte, rng)

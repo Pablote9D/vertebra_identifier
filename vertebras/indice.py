@@ -29,17 +29,29 @@ def leer_metadata(ruta):
     return validas
 
 
-def indexar(metadata, salida, avisar=None):
-    """Procesa las mallas de metadata.csv y guarda el índice. Devuelve la cantidad de vértebras."""
+def describir_limpieza(info):
+    """Texto para informar la limpieza de una malla, o "" si no se quitó nada apreciable."""
+    q = info.get("area_quitada", 0.0)
+    if q <= 0.001:
+        return ""
+    texto = f"se quitó {q:.1%} del área ({info['piezas_quitadas']} piezas sueltas)"
+    return texto + (" — revisar la malla" if q > 0.05 else "")
+
+
+def indexar(metadata, salida, avisar=None, limpiar=False):
+    """Procesa las mallas de metadata.csv y guarda el índice. Devuelve la cantidad de vértebras.
+    Con limpiar=True quita las piezas ajenas de cada malla (ver preproceso.limpiar_piezas)."""
     rng = np.random.default_rng(0)
     puntos, normales, descs, etiquetas = [], [], [], []
     for fila in leer_metadata(metadata):
-        p, n, d = preparar(fila["ruta"], rng, normales=True)
+        info = {}
+        p, n, d = preparar(fila["ruta"], rng, normales=True, limpiar=limpiar, info=info)
         puntos.append(p); normales.append(n); descs.append(d)
         etiquetas.append((fila["id_especie"], fila["id_individuo"], fila["region"],
                           int(fila["posicion"]), fila.get("id_escaneo", "")))
         if avisar:
-            avisar(fila["archivo_liviano"])
+            limpieza = describir_limpieza(info)
+            avisar(fila["archivo_liviano"] + (f": {limpieza}" if limpieza else ""))
     if not puntos:
         raise ValueError(f"No hay vértebras aprobadas en {metadata}")
     descs = np.array(descs)
@@ -86,8 +98,9 @@ def buscar(q, dq, ind, excluir=None, top=5):
     return [(r[0], r[1], r[2], p) for r, p in zip(res, prob)][:top]
 
 
-def identificar(ruta_modelo, ind, top=5):
-    """Candidatas para un modelo 3D (mismo formato que `buscar`)."""
+def identificar(ruta_modelo, ind, top=5, limpiar=False, info=None):
+    """Candidatas para un modelo 3D (mismo formato que `buscar`). Con limpiar=True quita antes
+    las piezas ajenas, y anota en `info` cuánto se quitó."""
     rng = np.random.default_rng(1)
-    q, dq = preparar(ruta_modelo, rng)
+    q, dq = preparar(ruta_modelo, rng, limpiar=limpiar, info=info)
     return buscar(q.astype(np.float64), dq, ind, top=top)

@@ -11,6 +11,8 @@ RECORTE_ICP = 0.9        # fracción de pares más cercanos usados en cada paso 
 # Motor open3d: distancia máxima de correspondencia, como fracción del radio medio de la referencia
 UMBRAL_GRUESO = 0.5
 UMBRAL_FINO = 0.15
+# Limpieza de mallas: una pieza suelta se conserva si está a menos de esto de la pieza principal
+PIEZA_PEGADA_MM = 0.5
 
 N_ORIENTACIONES = 24     # orientaciones iniciales de la etapa rápida (4 o 24)
 MOTOR = "open3d"         # "open3d" u "scipy" (ICP propio con recorte de pares, el original)

@@ -2,13 +2,14 @@
 
 import os
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import numpy as np
 
 from . import config as cfg
 from .indice import buscar, cargar_indice
 from .preproceso import a_marco_pca, descriptor, recortar
+from .regiones import REGIONES, codigo, prefijo
 
 _EVAL = {}
 
@@ -34,15 +35,25 @@ def _evaluar_consulta(i):
 
 def evaluar(ruta_indice, recorte=0.0, muestra=0, nucleos=0):
     """Deja afuera un individuo entero por vez y trata de ubicar sus vértebras con el resto.
-    Devuelve un diccionario con las métricas y el detalle por consulta."""
+    Las consultas cuya especie y posición no aparecen en ningún otro individuo no tienen respuesta
+    posible: no se cuentan y se informan en "sin_referencia".
+    Devuelve un diccionario con las métricas, el resumen por posición y el detalle por consulta."""
     rng = np.random.default_rng(2)
     ind = cargar_indice(ruta_indice)
     total = esp_ok = exacta = mas_menos1 = top3 = 0
     dist_aciertos = []
     errores = defaultdict(int)
     detalle = []
+    por_posicion = {}
     t0 = time.time()
-    consultas = list(range(len(ind["etiquetas"])))
+    individuos = defaultdict(set)                  # (especie, región, posición) -> individuos
+    for e in ind["etiquetas"]:
+        individuos[(e[0], e[2], e[3])].add(e[1])
+    consultas, sin_referencia = [], []
+    for i, e in enumerate(ind["etiquetas"]):
+        (consultas if individuos[(e[0], e[2], e[3])] - {e[1]} else sin_referencia).append(i)
+    if not consultas:
+        raise ValueError("Ninguna vértebra tiene en la base otro individuo de su especie y posición")
     if muestra and muestra < len(consultas):
         consultas = [int(i) for i in sorted(rng.choice(consultas, muestra, replace=False))]
     config = (ruta_indice, recorte, cfg.MOTOR, cfg.ICP, cfg.N_ORIENTACIONES)
@@ -74,6 +85,15 @@ def evaluar(ruta_indice, recorte=0.0, muestra=0, nucleos=0):
             if any(r[0] == (e[0], e[2], e[3]) for r in res):
                 top3 += 1
             detalle.append({"consulta": e, "candidatas": res})
+            pp = por_posicion.setdefault((e[2], e[3]), {"n": 0, "exacta": 0, "mas_menos1": 0,
+                                                       "predicciones": Counter()})
+            pp["n"] += 1
+            if esp == e[0]:
+                pp["exacta"] += reg == e[2] and pos == e[3]
+                pp["mas_menos1"] += reg == e[2] and abs(pos - e[3]) <= 1
+                pp["predicciones"][codigo(reg, pos)] += 1
+            else:
+                pp["predicciones"]["otra especie"] += 1
     finally:
         if pool is not None:
             pool.close(); pool.join()
@@ -82,5 +102,12 @@ def evaluar(ruta_indice, recorte=0.0, muestra=0, nucleos=0):
         "especie": esp_ok / total, "exacta": exacta / total, "mas_menos1": mas_menos1 / total,
         "top3": top3 / total, "errores": dict(sorted(errores.items())),
         "umbral_sugerido": (np.percentile(dist_aciertos, 95) * 1.5 if dist_aciertos else None),
+        "por_posicion": dict(sorted(por_posicion.items(), key=lambda kv: _orden_posicion(*kv[0]))),
+        "sin_referencia": [ind["etiquetas"][i] for i in sin_referencia],
         "detalle": detalle,
     }
+
+
+def _orden_posicion(region, pos):
+    """Orden anatómico: por región (cervical a pigóstilo) y número."""
+    return list(REGIONES.values()).index(prefijo(region)), pos

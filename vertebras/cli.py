@@ -16,7 +16,7 @@ import sys
 
 from . import config as cfg
 from .evaluacion import evaluar
-from .indice import cargar_indice, identificar, indexar
+from .indice import cargar_indice, describir_limpieza, identificar, indexar
 from .regiones import codigo
 from .sintetico import generar_base
 
@@ -27,7 +27,8 @@ def cmd_sintetico(args):
 
 
 def cmd_indexar(args):
-    n = indexar(args.metadata, args.salida, avisar=lambda a: print(f"  {a}", file=sys.stderr))
+    n = indexar(args.metadata, args.salida, avisar=lambda a: print(f"  {a}", file=sys.stderr),
+                limpiar=args.limpiar)
     print(f"Índice con {n} vértebras guardado en {args.salida}")
 
 
@@ -37,8 +38,11 @@ def _configurar(args):
 
 def cmd_identificar(args):
     _configurar(args)
-    res = identificar(args.modelo, cargar_indice(args.indice), top=args.top)
+    info = {}
+    res = identificar(args.modelo, cargar_indice(args.indice), top=args.top, limpiar=args.limpiar, info=info)
     print(f"\nCandidatas para {os.path.basename(args.modelo)}:\n")
+    if describir_limpieza(info):
+        print(f"  Limpieza: {describir_limpieza(info)}\n")
     print(f"  {'Especie':<10}{'Posición':<10}{'Prob. rel.':>11}{'Dist. (mm)':>12}  Individuo más parecido")
     for (esp, reg, pos), dist, indiv, p in res:
         print(f"  {esp:<10}{codigo(reg, pos):<10}{p:>10.0%}{dist:>12.3f}  {indiv}")
@@ -64,6 +68,18 @@ def cmd_evaluar(args):
               ", ".join(f"{k} posiciones: {v}" for k, v in r["errores"].items()))
     if r["umbral_sugerido"] is not None:
         print(f"\n  Umbral sugerido para 'no se parece a nada': {r['umbral_sugerido']:.3f} mm")
+    if r["sin_referencia"]:
+        print(f"\n  No se contaron {len(r['sin_referencia'])} vértebras sin otro individuo de su especie "
+              "y posición en la base: " + ", ".join(f"{e[1]} {codigo(e[2], e[3])}" for e in r["sin_referencia"][:8])
+              + (", ..." if len(r["sin_referencia"]) > 8 else ""))
+    print(f"\n  Por posición:\n\n  {'Posición':<10}{'Consultas':>9}{'Exacta':>8}{'±1':>7}  Predicciones (posición elegida × veces)")
+    for (reg, pos), pp in r["por_posicion"].items():
+        preds = ", ".join(f"{k} ×{v}" for k, v in pp["predicciones"].most_common())
+        print(f"  {codigo(reg, pos):<10}{pp['n']:>9}{pp['exacta'] / pp['n']:>8.0%}{pp['mas_menos1'] / pp['n']:>7.0%}  {preds}")
+
+
+AYUDA_LIMPIAR = ("quitar piezas sueltas ajenas a la vértebra (marcadores, restos de segmentación); "
+                 "informa cuánto se quitó de cada malla")
 
 
 def _opciones_motor(s):
@@ -88,6 +104,7 @@ def main(argv=None):
     s = sub.add_parser("indexar", help="procesar la base")
     s.add_argument("--metadata", required=True)
     s.add_argument("--salida", default="indice.npz")
+    s.add_argument("--limpiar", action="store_true", help=AYUDA_LIMPIAR)
     s.set_defaults(func=cmd_indexar)
 
     s = sub.add_parser("identificar", help="identificar una vértebra")
@@ -95,6 +112,7 @@ def main(argv=None):
     s.add_argument("--indice", default="indice.npz")
     s.add_argument("--top", type=int, default=5)
     s.add_argument("--umbral", type=float, default=None, help="distancia en mm (sale de 'evaluar')")
+    s.add_argument("--limpiar", action="store_true", help=AYUDA_LIMPIAR)
     _opciones_motor(s)
     s.set_defaults(func=cmd_identificar)
 
