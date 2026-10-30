@@ -34,7 +34,8 @@ def describir_limpieza(info):
     q = info.get("area_quitada", 0.0)
     if q <= 0.001:
         return ""
-    texto = f"se quitó {q:.1%} del área ({info['piezas_quitadas']} piezas sueltas)"
+    n = info["piezas_quitadas"]
+    texto = f"se quitó {q:.1%} del área ({n} {'pieza suelta' if n == 1 else 'piezas sueltas'})"
     return texto + (" — revisar la malla" if q > 0.05 else "")
 
 

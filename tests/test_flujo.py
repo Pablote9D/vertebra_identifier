@@ -119,4 +119,4 @@ def test_indexar_con_limpieza_informa(base_chica, tmp_path):
     ruta = _metadata(tmp_path, ["a,m/sucia.ply,ESPAAA,I1,Cervical,3,Sí"])
     avisos = []
     indexar(ruta, str(tmp_path / "i.npz"), avisar=avisos.append, limpiar=True)
-    assert "se quitó" in avisos[0] and "1 piezas sueltas" in avisos[0]
+    assert "se quitó" in avisos[0] and "1 pieza suelta" in avisos[0]

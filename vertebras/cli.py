@@ -3,6 +3,7 @@ Identificación de vértebras de aves por comparación de modelos 3D.
 
 Subcomandos:
   sintetico    Genera una base de prueba con vértebras 3D sintéticas.
+  verificar    Revisa la planilla y las mallas antes de indexar.
   indexar      Procesa la base (metadata.csv + mallas) y guarda un índice.
   identificar  Compara un modelo 3D contra el índice y muestra candidatas.
   evaluar      Prueba "dejando un individuo afuera" y mide la precisión.
@@ -19,11 +20,38 @@ from .evaluacion import evaluar
 from .indice import cargar_indice, describir_limpieza, identificar, indexar
 from .regiones import codigo
 from .sintetico import generar_base
+from .verificacion import verificar
 
 
 def cmd_sintetico(args):
     n = generar_base(args.salida, args.individuos, args.semilla)
     print(f"{n} vértebras sintéticas en {args.salida}")
+
+
+def cmd_verificar(args):
+    r = verificar(args.metadata, leer_mallas=not args.sin_mallas)
+    res = r["resumen"]
+    print(f"\n{args.metadata}: {res['filas']} filas, {res.get('aprobadas', 0)} aprobadas, "
+          f"{res.get('especies', 0)} especies, {res.get('individuos', 0)} individuos\n")
+    titulos = {"error": "ERRORES (impiden indexar)", "aviso": "AVISOS (conviene revisar)", "info": "INFORMACIÓN"}
+    for nivel, titulo in titulos.items():
+        ps = [p for p in r["problemas"] if p["nivel"] == nivel]
+        if ps:
+            print(f"  {titulo}: {len(ps)}")
+            for p in ps:
+                donde = f"fila {p['fila']}, {p['id']}" if p["fila"] else p["id"]
+                print(f"    [{donde}] {p['mensaje']}")
+            print()
+    if not r["problemas"]:
+        print("  No se encontraron problemas.\n")
+    if args.csv:
+        import csv
+        with open(args.csv, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=["nivel", "fila", "id", "mensaje"])
+            w.writeheader(); w.writerows(r["problemas"])
+        print(f"  Detalle guardado en {args.csv}")
+    if any(p["nivel"] == "error" for p in r["problemas"]):
+        sys.exit(1)
 
 
 def cmd_indexar(args):
@@ -100,6 +128,12 @@ def main(argv=None):
     s.add_argument("--individuos", type=int, default=4)
     s.add_argument("--semilla", type=int, default=42)
     s.set_defaults(func=cmd_sintetico)
+
+    s = sub.add_parser("verificar", help="revisar planilla y mallas antes de indexar")
+    s.add_argument("--metadata", required=True)
+    s.add_argument("--sin-mallas", action="store_true", help="revisar solo la planilla (rápido)")
+    s.add_argument("--csv", default=None, help="guardar la lista de problemas en un CSV")
+    s.set_defaults(func=cmd_verificar)
 
     s = sub.add_parser("indexar", help="procesar la base")
     s.add_argument("--metadata", required=True)
