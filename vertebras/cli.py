@@ -67,7 +67,8 @@ def _configurar(args):
 def cmd_identificar(args):
     _configurar(args)
     info = {}
-    res = identificar(args.modelo, cargar_indice(args.indice), top=args.top, limpiar=args.limpiar, info=info)
+    res = identificar(args.modelo, cargar_indice(args.indice), top=args.top, limpiar=args.limpiar, info=info,
+                      fragmento=args.fragmento)
     print(f"\nCandidatas para {os.path.basename(args.modelo)}:\n")
     if describir_limpieza(info):
         print(f"  Limpieza: {describir_limpieza(info)}\n")
@@ -148,13 +149,16 @@ def main(argv=None):
     s.add_argument("--top", type=int, default=5)
     s.add_argument("--umbral", type=float, default=None, help="distancia en mm (sale de 'evaluar')")
     s.add_argument("--limpiar", action="store_true", help=AYUDA_LIMPIAR)
+    s.add_argument("--fragmento", action="store_true",
+                   help="a la pieza le falta una parte: no se penaliza lo que no está")
     _opciones_motor(s)
     s.set_defaults(func=cmd_identificar)
 
     s = sub.add_parser("evaluar", help="medir precisión dejando un individuo afuera")
     s.add_argument("--indice", default="indice.npz")
     s.add_argument("--recorte", type=float, default=0.0,
-                   help="fracción a eliminar de cada consulta para simular fragmentos (ej. 0.3)")
+                   help="fracción a eliminar de cada consulta para simular fragmentos (ej. 0.3); "
+                        "se evalúan como identificar --fragmento")
     s.add_argument("--muestra", type=int, default=0,
                    help="evaluar solo N vértebras al azar (más rápido)")
     s.add_argument("--nucleos", type=int, default=0,

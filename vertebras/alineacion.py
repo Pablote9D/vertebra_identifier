@@ -153,19 +153,31 @@ def alinear_fino(q, ref, transf, normales=None, cache=None):
     return alinear_fino_scipy(q, ref, transf)
 
 
-def distancia_superficies(q, ref, r, t):
-    """Distancia media simétrica (mm) entre la consulta transformada y la referencia."""
+def distancia_superficies(q, ref, r, t, fragmento=False):
+    """Distancia media simétrica (mm) entre la consulta transformada y la referencia.
+    Con fragmento=True no se penaliza la parte de la referencia que le falta a la consulta."""
     arbol_ref = cKDTree(ref)
     qa = q @ r.T + t
     d1 = arbol_ref.query(qa[:cfg.N_FINO])[0]              # consulta -> referencia
     d2 = cKDTree(qa).query(ref[:cfg.N_FINO])[0]           # referencia -> consulta
-    # si la consulta es un fragmento, no se penaliza la parte de la referencia que falta
-    cubierta = min(1.0, max(0.5, len(q) / len(ref)))
-    d2 = np.sort(d2)[: int(len(d2) * cubierta)]
+    if fragmento:
+        d2 = np.sort(d2)[: int(len(d2) * cubierta_geometrica(d2, ref, arbol_ref))]
     return 0.5 * (d1.mean() + d2.mean())
 
 
-def comparar_fino(q, ref, transf, normales=None, cache=None):
+def cubierta_geometrica(d2, ref, arbol_ref):
+    """Fracción de la referencia que la consulta alineada cubre: la de sus puntos con un punto de
+    la consulta a menos de tres separaciones típicas (0.5 mm como mínimo), entre 0.5 y 1.
+
+    Antes se estimaba con la cantidad de puntos (consulta / referencia), lo que solo funcionaba
+    con fragmentos simulados: un fragmento real se muestrea con tantos puntos como una pieza entera.
+    Se usa solo cuando se sabe que la consulta es un fragmento: con piezas enteras, recortar la
+    distancia favorecía a veces a una vértebra vecina incorrecta."""
+    separacion = np.median(arbol_ref.query(ref[:500], k=2)[0][:, 1])
+    return float(np.clip(np.mean(d2 < max(0.5, 3 * separacion)), 0.5, 1.0))
+
+
+def comparar_fino(q, ref, transf, normales=None, cache=None, fragmento=False):
     """Etapa fina: refina la alineación y mide la distancia media entre superficies (mm)."""
     r, t = alinear_fino(q, ref, transf, normales, cache)
-    return distancia_superficies(q, ref, r, t)
+    return distancia_superficies(q, ref, r, t, fragmento)

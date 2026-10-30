@@ -29,7 +29,10 @@ def _evaluar_consulta(i):
     q = ind["puntos"][i]
     rng = np.random.default_rng(1000 + i)
     if _EVAL["recorte"] > 0:
-        q = a_marco_pca(recortar(q, _EVAL["recorte"], rng)).astype(np.float32)
+        q = a_marco_pca(recortar(q, _EVAL["recorte"], rng))
+        # un fragmento real se muestrea con tantos puntos como una pieza entera: se simula igual
+        q = q[rng.choice(len(q), cfg.N_DENSO, replace=len(q) < cfg.N_DENSO)].astype(np.float32)
+        return i, buscar(q, ind, excluir=e[1], top=3, fragmento=True)
     return i, buscar(q, ind, excluir=e[1], top=3)
 
 

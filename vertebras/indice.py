@@ -84,8 +84,9 @@ def preseleccionar(q, ind, validos):
     return [validos[o] for o in np.argsort(d, kind="stable")[:cfg.N_PRESELECCION]]
 
 
-def buscar(q, ind, excluir=None, top=5):
-    """Devuelve las candidatas: (especie, región, posición), distancia, individuo, prob. relativa."""
+def buscar(q, ind, excluir=None, top=5, fragmento=False):
+    """Devuelve las candidatas: (especie, región, posición), distancia, individuo, prob. relativa.
+    Con fragmento=True no se penaliza la parte de cada referencia que le falta a la consulta."""
     validos = [i for i, e in enumerate(ind["etiquetas"]) if excluir is None or e[1] != excluir]
     validos = preseleccionar(q, ind, validos)
     gruesos = [alinear_grueso(q, ind["puntos"][i], ind["normales"][i], ind["cache"][i]) + (i,)
@@ -93,7 +94,7 @@ def buscar(q, ind, excluir=None, top=5):
     gruesos.sort(key=lambda x: x[0])
     por_etiqueta = {}
     for _, transf, i in gruesos[:cfg.N_FINALISTAS]:
-        dist = comparar_fino(q, ind["puntos"][i], transf, ind["normales"][i], ind["cache"][i])
+        dist = comparar_fino(q, ind["puntos"][i], transf, ind["normales"][i], ind["cache"][i], fragmento)
         e = ind["etiquetas"][i]
         clave = (e[0], e[2], e[3])                      # especie, región, posición
         if dist < por_etiqueta.get(clave, (np.inf,))[0]:
@@ -106,9 +107,10 @@ def buscar(q, ind, excluir=None, top=5):
     return [(r[0], r[1], r[2], p) for r, p in zip(res, prob)][:top]
 
 
-def identificar(ruta_modelo, ind, top=5, limpiar=False, info=None):
+def identificar(ruta_modelo, ind, top=5, limpiar=False, info=None, fragmento=False):
     """Candidatas para un modelo 3D (mismo formato que `buscar`). Con limpiar=True quita antes
-    las piezas ajenas, y anota en `info` cuánto se quitó."""
+    las piezas ajenas, y anota en `info` cuánto se quitó. fragmento=True si a la pieza le falta
+    una parte."""
     rng = np.random.default_rng(1)
     q, _ = preparar(ruta_modelo, rng, limpiar=limpiar, info=info)
-    return buscar(q.astype(np.float64), ind, top=top)
+    return buscar(q.astype(np.float64), ind, top=top, fragmento=fragmento)

@@ -55,3 +55,19 @@ def test_punto_a_plano_alinea_un_fragmento(vertebra):
     _, transf = alinear_grueso(q, ref, normales, {})
     r, t = alinear_fino(q, ref, transf, normales, {})
     assert distancia_superficies(q, ref, r, t) < distancia_superficies(q, ref, r_ok, t_ok) + 0.01
+
+
+def test_fragmento_no_penaliza_lo_que_falta(vertebra):
+    """Una mitad de la pieza, muestreada con tantos puntos como la entera (como un archivo real)."""
+    v, f = vertebra
+    ref = muestrear_superficie(v, f, 8000, np.random.default_rng(1))
+    q = muestrear_superficie(v, f, 16000, np.random.default_rng(2))
+    q = q[q[:, 0] > np.median(q[:, 0])][:8000]
+    r, t = np.eye(3), np.zeros(3)
+    con = distancia_superficies(q, ref, r, t, fragmento=True)
+    sin = distancia_superficies(q, ref, r, t)
+    assert con < 0.5 * sin
+    # una pieza entera da lo mismo se marque o no como fragmento (cubre toda la referencia)
+    entera = muestrear_superficie(v, f, 8000, np.random.default_rng(3))
+    assert distancia_superficies(entera, ref, r, t, fragmento=True) == pytest.approx(
+        distancia_superficies(entera, ref, r, t), rel=0.02)
