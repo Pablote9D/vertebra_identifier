@@ -68,7 +68,7 @@ def cmd_identificar(args):
     _configurar(args)
     info = {}
     res = identificar(args.modelo, cargar_indice(args.indice), top=args.top, limpiar=args.limpiar, info=info,
-                      fragmento=args.fragmento)
+                      fragmento=args.fragmento, region=args.region)
     print(f"\nCandidatas para {os.path.basename(args.modelo)}:\n")
     if describir_limpieza(info):
         print(f"  Limpieza: {describir_limpieza(info)}\n")
@@ -151,6 +151,7 @@ def main(argv=None):
     s.add_argument("--limpiar", action="store_true", help=AYUDA_LIMPIAR)
     s.add_argument("--fragmento", action="store_true",
                    help="a la pieza le falta una parte: no se penaliza lo que no está")
+    s.add_argument("--region", default=None, help="comparar solo contra esa región (ej. Cervical)")
     _opciones_motor(s)
     s.set_defaults(func=cmd_identificar)
 

@@ -8,11 +8,11 @@ Es un prototipo para responder una pregunta: **¿la forma 3D alcanza para distin
 
 - Python 3.10 o posterior
 - numpy, scipy, open3d y trimesh (probado con numpy 2.5, scipy 1.18, open3d 0.20 y trimesh 5.2, en Python 3.13)
-- En Linux, Open3D necesita además la librería del sistema libEGL
+- En Linux, Open3D necesita además las librerías del sistema libEGL y libusb (en Debian y Ubuntu: `libegl1` y `libusb-1.0-0`)
 
 ```
 pip install -r requirements.txt
-sudo apt install libegl1        # solo Linux, si Open3D da "libEGL.so.1: cannot open shared object file"
+sudo apt install libegl1 libusb-1.0-0   # solo Linux, si Open3D da "libEGL.so.1: cannot open shared object file"
 ```
 
 Para correr los tests:
@@ -133,6 +133,26 @@ Las vértebras cuya especie y posición no aparecen en ningún otro individuo de
 - `--muestra N` evalúa solo N vértebras al azar, para pruebas rápidas. Con pocas consultas el resultado varía mucho (ver "Resultados").
 - `--nucleos N` reparte las consultas en N procesos. Por defecto usa todos los núcleos. El resultado no depende de cuántos se usen.
 
+### 5. La app web
+
+`vertebras/servidor.py` sirve una página para el celular (carpeta `web/`, con el estilo de WildMilu) y una API:
+
+| Dirección | Qué hace |
+| --- | --- |
+| `POST /api/identificar` | Recibe el archivo (`archivo`), `fragmento` (true/false) y `region` (opcional). Devuelve las candidatas, el tamaño de la pieza, la limpieza aplicada y los puntos alineados para dibujar dónde difiere de la mejor candidata. El archivo se borra al terminar |
+| `GET /api/coleccion` | Especies, individuos y vértebras de la colección, por región |
+| `GET /api/salud` | Para saber si el servicio está andando |
+| `GET /api/docs` | Documentación interactiva de la API |
+
+Para probarla en la computadora:
+
+```
+pip install -r requirements-servidor.txt
+INDICE=indice.npz ESPECIES=especies.csv UMBRAL_MM=0.93 uvicorn --factory vertebras.servidor:crear_app --port 8080
+```
+
+Cómo publicarla en Google Cloud Run: [DESPLEGAR.md](DESPLEGAR.md).
+
 ### Opciones de alineación
 
 `identificar` y `evaluar` aceptan:
@@ -155,6 +175,9 @@ vertebras/          paquete
   indice.py         construir, cargar y consultar el índice
   evaluacion.py     evaluación dejando un individuo afuera, en paralelo
   verificacion.py   revisión de planilla y mallas antes de indexar
+  servidor.py       API web y página de la app
+web/                página de la app (HTML, CSS y JavaScript, sin compilar)
+Dockerfile          imagen del servidor para Cloud Run (ver DESPLEGAR.md)
   sintetico.py      base de prueba
   cli.py            línea de comandos
 tests/              tests (pytest)
@@ -279,7 +302,7 @@ Normalizar el tamaño (prueba anterior, con 25 consultas) dio 12% de especie y 1
 
 1. Escanear 3 o más individuos de una misma especie con el escáner propio (la región cervical alcanza, unos 40 escaneos) y repetir el piloto.
 2. Según los resultados, sumar landmarks o medidas como información adicional.
-3. Un servidor que reciba el archivo y use este paquete, y una página web para el celular (hay un prototipo de las pantallas).
+3. Publicar la app en Cloud Run (ver DESPLEGAR.md) y probarla con colegas.
 
 ### Para la app
 

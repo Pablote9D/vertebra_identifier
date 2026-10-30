@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OsteoAve · Identificación de vértebras de aves</title>
+  <meta name="description" content="Subí el modelo 3D de una vértebra de ave y comparalo con una colección de referencia.">
+  <meta name="theme-color" content="#2f4f3e">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Poppins:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css?v=1">
+  <script type="importmap">
+  {"imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <a class="nav__logo" href="#inicio">Osteo<span>Ave</span></a>
+    <button class="nav__menu" id="nav-menu" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-links">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav__links" id="nav-links">
+      <li><a href="#inicio">Inicio</a></li>
+      <li><a href="#identificar">Identificar</a></li>
+      <li><a href="#coleccion">Colección</a></li>
+    </ul>
+  </nav>
+
+  <!-- ===================== INICIO ===================== -->
+  <section class="pantalla" id="inicio" data-pantalla>
+    <header class="hero">
+      <p class="hero__kicker">Osteología de aves</p>
+      <h1 class="hero__title">¿De qué ave es esta <span>vértebra</span>?</h1>
+      <p class="hero__subtitle">Subí el modelo 3D de una vértebra y comparalo con una colección de referencia escaneada en museos.</p>
+      <figure class="hero__figura">
+        <img src="img/condor_c9.webp" alt="Modelo 3D de una vértebra cervical de cóndor andino" width="300" height="300">
+        <figcaption>Cervical 9 de cóndor andino, <i>Vultur gryphus</i></figcaption>
+      </figure>
+      <a class="boton" href="#identificar">Identificar una vértebra</a>
+      <a class="boton boton--claro" href="#coleccion">Ver la colección</a>
+    </header>
+
+    <div class="seccion">
+      <h2 class="seccion__titulo">Cómo funciona</h2>
+      <p class="seccion__subtitulo">Tres pasos, sin instalar nada</p>
+      <ol class="pasos">
+        <li class="tarjeta paso"><span class="paso__n">1</span><div><h3>Subí el modelo</h3><p>Un archivo PLY, OBJ o STL de una sola vértebra, en milímetros.</p></div></li>
+        <li class="tarjeta paso"><span class="paso__n">2</span><div><h3>Comparamos la forma</h3><p>Se alinea contra las vértebras de la colección y se mide cuánto difieren las superficies.</p></div></li>
+        <li class="tarjeta paso"><span class="paso__n">3</span><div><h3>Mirá las candidatas</h3><p>Especie y posición más parecidas, con la vértebra de referencia que más se acerca.</p></div></li>
+      </ol>
+      <p class="nota">En desarrollo: los resultados son orientativos mientras crece la colección.</p>
+    </div>
+  </section>
+
+  <!-- ===================== IDENTIFICAR ===================== -->
+  <section class="pantalla" id="identificar" data-pantalla hidden>
+    <div class="seccion">
+      <h1 class="pagina__titulo">Identificar una vértebra</h1>
+      <p class="pagina__subtitulo">Comparamos tu pieza con la colección de referencia.</p>
+
+      <form id="form" class="formulario" novalidate>
+        <div class="elegir" role="group" aria-label="Qué vas a subir">
+          <button type="button" class="filtro activo" aria-pressed="true">Modelo 3D</button>
+          <button type="button" class="filtro" aria-pressed="false" disabled>Foto <span class="etiqueta">pronto</span></button>
+        </div>
+
+        <label class="subir" id="subir">
+          <svg class="icono icono--grande" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z M4 7.5l8 4.5 8-4.5 M12 12v9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          <span class="subir__titulo">Elegí el archivo del modelo</span>
+          <span class="subir__ayuda">PLY, OBJ, STL u OFF · hasta 30 MB</span>
+          <input type="file" id="archivo" name="archivo" accept=".ply,.obj,.stl,.off" required>
+        </label>
+
+        <div class="archivo" id="archivo-elegido" hidden>
+          <div class="visor visor--chico" id="visor-previa" aria-label="Vista previa del modelo" role="img"></div>
+          <div class="archivo__datos">
+            <div class="archivo__nombre" id="archivo-nombre"></div>
+            <div class="archivo__detalle" id="archivo-detalle"></div>
+          </div>
+        </div>
+
+        <section class="caja">
+          <h2>Antes de subir, revisá que</h2>
+          <ul class="lista-ok">
+            <li>El modelo esté en milímetros.</li>
+            <li>Sea una sola vértebra, sin base, plastilina ni soporte.</li>
+            <li>Alcanza la versión liviana: 100.000 a 300.000 triángulos.</li>
+          </ul>
+        </section>
+
+        <h2 class="subtitulo">Si sabés algo de la pieza</h2>
+        <label class="opcion">
+          <input type="checkbox" id="fragmento" name="fragmento">
+          <span><strong>Es un fragmento</strong><span>Le falta una parte: no se penaliza lo que no está.</span></span>
+        </label>
+        <label class="campo">Región
+          <select id="region" name="region">
+            <option value="">No sé</option>
+            <option>Cervical</option>
+            <option>Torácica</option>
+            <option>Notario</option>
+            <option>Sinsacro</option>
+            <option>Caudal</option>
+            <option>Pigóstilo</option>
+          </select>
+        </label>
+
+        <p class="error" id="error" role="alert" hidden></p>
+        <button class="boton boton--ancho" id="comparar" type="submit">Comparar con la colección</button>
+        <p class="pie-form">Tarda unos segundos. El archivo se borra al terminar la comparación.</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===================== RESULTADO ===================== -->
+  <section class="pantalla" id="resultado" data-pantalla hidden>
+    <div class="seccion">
+      <div class="consulta">
+        <div>
+          <p class="mini">Resultado</p>
+          <h1 class="consulta__nombre" id="res-nombre"></h1>
+          <p class="consulta__detalle" id="res-detalle"></p>
+        </div>
+      </div>
+
+      <p class="aviso-umbral" id="res-umbral" hidden></p>
+      <p class="nota" id="res-limpieza" hidden></p>
+
+      <article class="principal" id="res-principal"></article>
+
+      <section>
+        <h2 class="subtitulo">Otras candidatas</h2>
+        <ul class="candidatas" id="res-otras"></ul>
+      </section>
+
+      <section class="tarjeta mapa">
+        <h2 class="subtitulo">Dónde difieren</h2>
+        <p class="ayuda" id="res-mapa-ayuda"></p>
+        <div class="visor" id="visor-mapa" role="img" aria-label="Nube de puntos de la vértebra coloreada según la distancia a la referencia. Se puede girar arrastrando."></div>
+        <div class="leyenda"><span>Coincide</span><span class="leyenda__barra"></span><span>1.5 mm o más</span></div>
+        <p class="ayuda">Arrastrá para girar, pellizcá o usá la rueda para acercar.</p>
+      </section>
+
+      <section class="caja">
+        <h2>Cómo leer esto</h2>
+        <p>La probabilidad es relativa entre las candidatas: sirve para ordenarlas, todavía no es un porcentaje de confianza.</p>
+        <p>La diferencia media es la distancia promedio entre las dos superficies después de alinearlas. Menor es más parecido.</p>
+      </section>
+
+      <a class="boton boton--ancho" href="#identificar">Nueva consulta</a>
+    </div>
+  </section>
+
+  <!-- ===================== COLECCIÓN ===================== -->
+  <section class="pantalla" id="coleccion" data-pantalla hidden>
+    <div class="seccion">
+      <h1 class="pagina__titulo centrado">Colección de referencia</h1>
+      <p class="pagina__subtitulo centrado" id="col-resumen">Cargando…</p>
+      <label class="buscar">
+        <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input type="search" id="col-buscar" placeholder="Buscar especie" aria-label="Buscar especie">
+      </label>
+      <div class="filtros" id="col-filtros" role="group" aria-label="Filtrar por región"></div>
+      <ul class="especies" id="col-especies"></ul>
+      <a class="boton boton--ancho" href="#identificar">Identificar una vértebra</a>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer__logo">Osteo<span>Ave</span></div>
+    <p>Identificación de vértebras de aves por su forma 3D</p>
+  </footer>
+
+  <div class="cargando" id="cargando" hidden>
+    <div class="cargando__caja" role="status" aria-live="polite">
+      <span class="cargando__rueda" aria-hidden="true"></span>
+      <p id="cargando-texto">Comparando con la colección…</p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js?v=1"></script>
+</body>
+</html>

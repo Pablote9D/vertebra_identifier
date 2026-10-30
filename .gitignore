@@ -4,3 +4,4 @@ __pycache__/
 *.npz
 base_sintetica/
 .pytest_cache/
+datos/

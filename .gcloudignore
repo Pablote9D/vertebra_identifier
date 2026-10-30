@@ -1,0 +1,10 @@
+# gcloud run deploy --source sube la carpeta sin lo que se lista acá.
+# A diferencia de .gitignore, acá datos/ SÍ se sube: lleva el índice.
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+tests
+piloto
+base_sintetica
