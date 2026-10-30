@@ -33,3 +33,13 @@ def configurar(motor=None, icp=None, orientaciones=None):
         if orientaciones not in (4, 24):
             raise ValueError("Las orientaciones iniciales deben ser 4 o 24")
         N_ORIENTACIONES = orientaciones
+
+
+def estado():
+    """Todos los parámetros (los nombres en mayúsculas), para pasarlos a otros procesos."""
+    return {k: v for k, v in globals().items() if k.isupper()}
+
+
+def aplicar(valores):
+    """Fija los parámetros guardados con `estado`."""
+    globals().update(valores)

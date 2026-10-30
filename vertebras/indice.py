@@ -7,7 +7,7 @@ import numpy as np
 
 from . import config as cfg
 from .alineacion import alinear_grueso, comparar_fino
-from .preproceso import preparar
+from .preproceso import descriptor_tamano, preparar
 from .regiones import prefijo
 
 
@@ -69,18 +69,25 @@ def cargar_indice(ruta):
     # los índices viejos no tienen normales: se estiman al usarlas
     normales = ([np.asarray(x, dtype=np.float64) for x in z["normales"]] if "normales" in z.files
                 else [None] * len(puntos))
-    return {"puntos": puntos, "normales": normales, "descs": z["descs"], "media": z["media"],
-            "desv": z["desv"], "etiquetas": [tuple(e) for e in z["etiquetas"]],
-            "cache": [dict() for _ in puntos]}
+    # la preselección usa el tamaño, que se calcula de los puntos (vale también para índices viejos)
+    tamanos = np.array([descriptor_tamano(p) for p in puntos])
+    return {"puntos": puntos, "normales": normales, "tamanos": tamanos,
+            "escala_tamanos": tamanos.std(axis=0) + 1e-9,
+            "etiquetas": [tuple(e) for e in z["etiquetas"]], "cache": [dict() for _ in puntos]}
 
 
-def buscar(q, dq, ind, excluir=None, top=5):
+def preseleccionar(q, ind, validos):
+    """Las cfg.N_PRESELECCION referencias de tamaño más parecido a la consulta."""
+    if len(validos) <= cfg.MAX_SIN_PRESELECCION:
+        return validos
+    d = np.linalg.norm((ind["tamanos"][validos] - descriptor_tamano(q)) / ind["escala_tamanos"], axis=1)
+    return [validos[o] for o in np.argsort(d, kind="stable")[:cfg.N_PRESELECCION]]
+
+
+def buscar(q, ind, excluir=None, top=5):
     """Devuelve las candidatas: (especie, región, posición), distancia, individuo, prob. relativa."""
     validos = [i for i, e in enumerate(ind["etiquetas"]) if excluir is None or e[1] != excluir]
-    if len(validos) > cfg.MAX_SIN_PRESELECCION:
-        z = (ind["descs"][validos] - ind["media"]) / ind["desv"]
-        zq = (dq - ind["media"]) / ind["desv"]
-        validos = [validos[o] for o in np.argsort(np.linalg.norm(z - zq, axis=1))[:cfg.N_PRESELECCION]]
+    validos = preseleccionar(q, ind, validos)
     gruesos = [alinear_grueso(q, ind["puntos"][i], ind["normales"][i], ind["cache"][i]) + (i,)
                for i in validos]
     gruesos.sort(key=lambda x: x[0])
@@ -103,5 +110,5 @@ def identificar(ruta_modelo, ind, top=5, limpiar=False, info=None):
     """Candidatas para un modelo 3D (mismo formato que `buscar`). Con limpiar=True quita antes
     las piezas ajenas, y anota en `info` cuánto se quitó."""
     rng = np.random.default_rng(1)
-    q, dq = preparar(ruta_modelo, rng, limpiar=limpiar, info=info)
-    return buscar(q.astype(np.float64), dq, ind, top=top)
+    q, _ = preparar(ruta_modelo, rng, limpiar=limpiar, info=info)
+    return buscar(q.astype(np.float64), ind, top=top)

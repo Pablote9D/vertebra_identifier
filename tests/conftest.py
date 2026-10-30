@@ -6,7 +6,7 @@ import pytest
 from vertebras import config as cfg
 from vertebras.sintetico import generar_base, vertebra_sintetica
 
-_PARAMETROS = ("N_DENSO", "MOTOR", "ICP", "N_ORIENTACIONES")
+_PARAMETROS = ("N_DENSO", "MOTOR", "ICP", "N_ORIENTACIONES", "MAX_SIN_PRESELECCION", "N_PRESELECCION")
 
 
 @pytest.fixture(autouse=True)

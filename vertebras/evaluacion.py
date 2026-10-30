@@ -8,15 +8,15 @@ import numpy as np
 
 from . import config as cfg
 from .indice import buscar, cargar_indice
-from .preproceso import a_marco_pca, descriptor, recortar
+from .preproceso import a_marco_pca, recortar
 from .regiones import REGIONES, codigo, prefijo
 
 _EVAL = {}
 
 
-def _iniciar_trabajador(ruta_indice, recorte, motor, icp, orientaciones, indice=None):
+def _iniciar_trabajador(ruta_indice, recorte, config, indice=None):
     """Prepara un proceso de evaluación: carga el índice y fija la configuración."""
-    cfg.configurar(motor, icp, orientaciones)
+    cfg.aplicar(config)
     _EVAL["ind"] = indice if indice is not None else cargar_indice(ruta_indice)
     _EVAL["recorte"] = recorte
 
@@ -30,7 +30,7 @@ def _evaluar_consulta(i):
     rng = np.random.default_rng(1000 + i)
     if _EVAL["recorte"] > 0:
         q = a_marco_pca(recortar(q, _EVAL["recorte"], rng)).astype(np.float32)
-    return i, buscar(q, descriptor(q, rng), ind, excluir=e[1], top=3)
+    return i, buscar(q, ind, excluir=e[1], top=3)
 
 
 def evaluar(ruta_indice, recorte=0.0, muestra=0, nucleos=0):
@@ -56,7 +56,7 @@ def evaluar(ruta_indice, recorte=0.0, muestra=0, nucleos=0):
         raise ValueError("Ninguna vértebra tiene en la base otro individuo de su especie y posición")
     if muestra and muestra < len(consultas):
         consultas = [int(i) for i in sorted(rng.choice(consultas, muestra, replace=False))]
-    config = (ruta_indice, recorte, cfg.MOTOR, cfg.ICP, cfg.N_ORIENTACIONES)
+    config = (ruta_indice, recorte, cfg.estado())
     nucleos = max(1, min(nucleos or os.cpu_count() or 1, len(consultas)))
     pool = None
     if nucleos == 1:

@@ -45,7 +45,7 @@ def test_indice_viejo_sin_normales(base_chica, tmp_path):
     ind = cargar_indice(viejo)
     assert ind["normales"][0] is None
     q = ind["puntos"][5]
-    res = buscar(q, None, ind, top=3)            # la consulta coincide exactamente con la referencia 5
+    res = buscar(q, ind, top=3)            # la consulta coincide exactamente con la referencia 5
     assert res[0][0] == ind["etiquetas"][5][0:1] + ind["etiquetas"][5][2:4]
     assert res[0][1] == pytest.approx(0, abs=1e-6)
     assert np.isfinite([r[3] for r in res]).all()
@@ -84,7 +84,7 @@ def test_consultas_sin_referencia_no_se_cuentan(base_chica, tmp_path):
     """Si una especie tiene un solo individuo, sus vértebras no tienen respuesta posible."""
     z = dict(np.load(base_chica["indice"], allow_pickle=True))
     quedan = [i for i, e in enumerate(z["etiquetas"]) if e[1] != "ESPAAA-002"]
-    for k in ("puntos", "normales", "descs", "etiquetas"):
+    for k in ("puntos", "normales", "descs", "etiquetas"):          # descs: índice de formato anterior
         z[k] = z[k][quedan]
     ruta = str(tmp_path / "sin_par.npz")
     np.savez_compressed(ruta, **z)
@@ -120,3 +120,16 @@ def test_indexar_con_limpieza_informa(base_chica, tmp_path):
     avisos = []
     indexar(ruta, str(tmp_path / "i.npz"), avisar=avisos.append, limpiar=True)
     assert "se quitó" in avisos[0] and "1 pieza suelta" in avisos[0]
+
+
+def test_preseleccion_por_tamano(base_chica):
+    from vertebras.indice import preseleccionar
+    ind = cargar_indice(base_chica["indice"])
+    e = ind["etiquetas"][5]
+    par = next(j for j, x in enumerate(ind["etiquetas"]) if x[1] != e[1] and (x[0], x[3]) == (e[0], e[3]))
+    validos = [j for j, x in enumerate(ind["etiquetas"]) if x[1] != e[1]]
+    cfg.MAX_SIN_PRESELECCION, cfg.N_PRESELECCION = 10, 10
+    sel = preseleccionar(ind["puntos"][5], ind, validos)
+    assert len(sel) == 10 and par in sel and set(sel) <= set(validos)
+    cfg.MAX_SIN_PRESELECCION = 1000
+    assert preseleccionar(ind["puntos"][5], ind, validos) == validos

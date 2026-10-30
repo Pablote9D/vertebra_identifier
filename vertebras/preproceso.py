@@ -60,7 +60,9 @@ def estimar_normales(p, k=30):
 
 
 def descriptor(p, rng, bins=24):
-    """Resumen barato de la forma, para preseleccionar candidatas."""
+    """Descriptor original (extensiones + histograma de distancias normalizado). Ya no se usa
+    para preseleccionar (ver descriptor_tamano); se sigue calculando porque consume números
+    aleatorios y quitarlo cambiaría el muestreo de los índices."""
     ext = np.ptp(p, axis=0)
     i, j = rng.integers(0, len(p), 4000), rng.integers(0, len(p), 4000)
     d = np.linalg.norm(p[i] - p[j], axis=1)
@@ -125,6 +127,13 @@ def limpiar_piezas(v, f, pegada_mm=None):
     nuevo[quedan] = np.arange(len(quedan))
     quitada = 1 - area[conservar].sum() / area.sum()
     return v[quedan], nuevo[caras], float(quitada), int(quitar.sum())
+
+
+def descriptor_tamano(p):
+    """Logaritmo del largo, ancho y alto de una nube en su marco PCA, para preseleccionar
+    candidatas. En las pruebas con bases sintéticas grandes ubicó mejor a las referencias
+    correctas que el descriptor original y que una prealineación barata."""
+    return np.log(np.ptp(p, axis=0) + 1e-9)
 
 
 def preparar(ruta, rng, recorte=0.0, normales=False, limpiar=False, info=None):
