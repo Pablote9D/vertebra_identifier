@@ -172,7 +172,7 @@ def _giros_24():
 
 
 GIROS = {4: _GIROS_4, 24: _giros_24()}
-N_ORIENTACIONES = 4      # orientaciones iniciales de la etapa rápida (4 o 24)
+N_ORIENTACIONES = 24     # orientaciones iniciales de la etapa rápida (4 o 24)
 
 
 def _kabsch(a, b):
@@ -241,7 +241,7 @@ def distancia_superficies(q, ref, r, t):
 # Motor Open3D: mismas etapas, con el ICP de Open3D (punto a punto o punto a plano)
 # ---------------------------------------------------------------------------
 
-MOTOR = "scipy"          # "scipy" (ICP propio con recorte de pares) u "open3d"
+MOTOR = "open3d"         # "open3d" u "scipy" (ICP propio con recorte de pares, el original)
 ICP = "plano"            # con open3d: "punto" (punto a punto) o "plano" (punto a plano)
 
 
@@ -413,14 +413,21 @@ def evaluar(args):
     t0 = time.time()
     consultas = list(range(len(ind["etiquetas"])))
     if args.muestra and args.muestra < len(consultas):
-        consultas = sorted(rng.choice(consultas, args.muestra, replace=False))
-    for i in consultas:
+        consultas = [int(i) for i in sorted(rng.choice(consultas, args.muestra, replace=False))]
+    config = (args.indice, args.recorte, N_ORIENTACIONES, MOTOR, ICP)
+    nucleos = max(1, min(args.nucleos or os.cpu_count() or 1, len(consultas)))
+    if nucleos == 1:
+        _iniciar_trabajador(*config, indice=ind)
+        resultados = map(_evaluar_consulta, consultas)
+    else:
+        import multiprocessing as mp
+        # cada proceso usa un solo hilo, para no competir por los núcleos
+        for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+            os.environ.setdefault(var, "1")
+        pool = mp.get_context("spawn").Pool(nucleos, _iniciar_trabajador, config)
+        resultados = pool.imap(_evaluar_consulta, consultas)
+    for i, res in resultados:
         e = ind["etiquetas"][i]
-        q = ind["puntos"][i]
-        if args.recorte > 0:
-            q = a_marco_pca(recortar(q, args.recorte, rng)).astype(np.float32)
-        dq = descriptor(q, rng)
-        res = buscar(q, dq, ind, excluir=e[1], top=3)
         (esp, reg, pos) = res[0][0]
         total += 1
         if esp == e[0]:
@@ -435,7 +442,7 @@ def evaluar(args):
             top3 += 1
     print(f"\nEvaluación dejando un individuo afuera ({total} vértebras, "
           f"recorte {args.recorte:.0%}, {args.orientaciones} orientaciones, motor {args.motor}"
-          f"{'/' + args.icp if args.motor == 'open3d' else ''}, {time.time() - t0:.0f} s)\n")
+          f"{'/' + args.icp if args.motor == 'open3d' else ''}, {nucleos} núcleos, {time.time() - t0:.0f} s)\n")
     print(f"  Especie correcta:            {esp_ok / total:6.1%}")
     print(f"  Posición exacta:             {exacta / total:6.1%}")
     print(f"  Posición con error ±1:       {mas_menos1 / total:6.1%}")
@@ -446,6 +453,31 @@ def evaluar(args):
     if dist_aciertos:
         print(f"\n  Umbral sugerido para 'no se parece a nada': "
               f"{np.percentile(dist_aciertos, 95) * 1.5:.3f} mm")
+    if nucleos > 1:
+        pool.close(); pool.join()
+
+
+_EVAL = {}
+
+
+def _iniciar_trabajador(ruta_indice, recorte, orientaciones, motor, icp, indice=None):
+    """Prepara un proceso de evaluación: carga el índice y fija la configuración."""
+    global N_ORIENTACIONES, MOTOR, ICP
+    N_ORIENTACIONES, MOTOR, ICP = orientaciones, motor, icp
+    _EVAL["ind"] = indice if indice is not None else cargar_indice(ruta_indice)
+    _EVAL["recorte"] = recorte
+
+
+def _evaluar_consulta(i):
+    """Busca la vértebra i dejando afuera a su individuo. Cada consulta tiene su propia semilla,
+    así el resultado no depende del orden ni de la cantidad de núcleos."""
+    ind = _EVAL["ind"]
+    e = ind["etiquetas"][i]
+    q = ind["puntos"][i]
+    rng = np.random.default_rng(1000 + i)
+    if _EVAL["recorte"] > 0:
+        q = a_marco_pca(recortar(q, _EVAL["recorte"], rng)).astype(np.float32)
+    return i, buscar(q, descriptor(q, rng), ind, excluir=e[1], top=3)
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +605,8 @@ def main():
                    help="fracción a eliminar de cada consulta para simular fragmentos (ej. 0.3)")
     s.add_argument("--muestra", type=int, default=0,
                    help="evaluar solo N vértebras al azar (más rápido)")
+    s.add_argument("--nucleos", type=int, default=0,
+                   help="procesos en paralelo (por defecto, todos los núcleos)")
     s.add_argument("--orientaciones", type=int, choices=(4, 24), default=N_ORIENTACIONES,
                    help="orientaciones iniciales de la alineación rápida")
     s.add_argument("--motor", choices=("scipy", "open3d"), default=MOTOR, help="implementación del ICP")
