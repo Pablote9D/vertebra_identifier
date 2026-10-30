@@ -13,6 +13,11 @@ const sinMovimiento = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let coleccion = null;          // respuesta de /api/coleccion
 let resultado = null;          // última respuesta de /api/identificar
 let nombreArchivo = "";
+// Sin servidor (por ejemplo en GitHub Pages) o con ?demo en la dirección, la página usa
+// respuestas grabadas en demo/ para poder probar la interfaz.
+let demo = new URLSearchParams(location.search).has("demo");
+const hayServidor = demo ? Promise.resolve(false)
+  : fetch("api/salud").then((r) => r.ok).catch(() => false);
 
 // ---------------------------------------------------------------------------
 // Navegación entre pantallas (#inicio, #identificar, #resultado, #coleccion)
@@ -168,6 +173,7 @@ function mostrarError(texto) { $("error").textContent = texto; $("error").hidden
 $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const archivo = entrada.files[0];
+  if (demo) { await mostrarEjemplo(); return; }
   if (!archivo) { mostrarError("Elegí primero el archivo del modelo."); return; }
   const datos = new FormData();
   datos.append("archivo", archivo);
@@ -190,12 +196,30 @@ $("form").addEventListener("submit", async (e) => {
   }
 });
 
+async function mostrarEjemplo() {
+  $("cargando-texto").textContent = "Cargando el resultado de ejemplo…";
+  $("cargando").hidden = false;
+  try {
+    const [r] = await Promise.all([fetch("demo/identificar.json").then((x) => x.json()),
+      new Promise((ok) => setTimeout(ok, 1200))]);   // una pausa breve, como la de una comparación real
+    resultado = r; nombreArchivo = r.demo.archivo;
+    pintarResultado();
+    location.hash = "#resultado";
+  } catch {
+    mostrarError("No se pudo cargar el ejemplo.");
+  } finally {
+    $("cargando").hidden = true;
+  }
+}
+$("ejemplo").addEventListener("click", mostrarEjemplo);
+
 function nombreEspecie(c) { return c.nombre_comun || c.nombre_cientifico || c.id_especie; }
 
 function pintarResultado() {
   const r = resultado, [m, ...otras] = r.candidatas;
   $("res-nombre").textContent = nombreArchivo;
-  $("res-detalle").textContent = `${r.tamano_mm.map((v) => num(v, 0)).join(" × ")} mm · comparada con ${r.comparadas} vértebras`
+  $("res-detalle").textContent = (r.demo ? `Ejemplo: ${r.demo.descripcion}. ` : "")
+    + `${r.tamano_mm.map((v) => num(v, 0)).join(" × ")} mm · comparada con ${r.comparadas} vértebras`
     + (r.fragmento ? " · como fragmento" : "") + ` · ${num(r.segundos, 1)} s`;
   const umbral = $("res-umbral");
   umbral.hidden = !r.supera_umbral;
@@ -254,7 +278,8 @@ let filtroRegion = "", textoBuscado = "";
 async function cargarColeccion() {
   if (!coleccion) {
     try {
-      const r = await fetch("api/coleccion");
+      const sinServidor = !(await hayServidor);
+      const r = await fetch(sinServidor ? "demo/coleccion.json" : "api/coleccion");
       if (!r.ok) throw new Error();
       coleccion = await r.json();
     } catch {
@@ -296,5 +321,11 @@ function icono() {
   return s;
 }
 
+hayServidor.then((ok) => {
+  demo = !ok;
+  $("demo-aviso").hidden = !demo;
+  $("ejemplo").hidden = !demo;
+  fetch(demo ? "demo/coleccion.json" : "api/coleccion").then((r) => r.ok && r.json())
+    .then((c) => { if (c) coleccion = c; }).catch(() => {});
+});
 mostrarPantalla();
-fetch("api/coleccion").then((r) => r.ok && r.json()).then((c) => { if (c) coleccion = c; }).catch(() => {});

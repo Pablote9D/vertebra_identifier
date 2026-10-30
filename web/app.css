@@ -94,6 +94,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .boton--claro { background: transparent; border: 1px solid rgba(247, 244, 236, 0.45); color: var(--crema); min-height: 44px; font-weight: 400; font-size: 0.9rem; }
 .boton--claro:hover { background: rgba(247, 244, 236, 0.12); }
 .boton--ancho { display: flex; width: 100%; min-height: 52px; }
+.boton--secundario { background: #fff; color: var(--verde-bosque); border: 1px solid var(--verde-bosque); margin-top: -0.4rem; }
+.boton--secundario:hover { background: #f2efe6; }
+.demo-aviso { padding: 0.6rem 1.25rem; background: var(--arena); color: var(--texto-suave); font-size: 0.8rem; text-align: center; border-bottom: 1px solid #d9cfba; }
 
 .filtros, .elegir { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
 .elegir .filtro { flex: 1; }

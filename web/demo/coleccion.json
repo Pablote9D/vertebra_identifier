@@ -1,0 +1,79 @@
+{
+ "vertebras": 76,
+ "individuos": 7,
+ "especies": [
+  {
+   "id_especie": "MELGAL",
+   "nombre_comun": "Pavo",
+   "nombre_cientifico": "Meleagris gallopavo",
+   "individuos": 2,
+   "vertebras": 24,
+   "regiones": {
+    "Cervical": 24
+   },
+   "evaluable": true
+  },
+  {
+   "id_especie": "AGENIG",
+   "nombre_comun": "Pintada negra",
+   "nombre_cientifico": "Agelastes niger",
+   "individuos": 1,
+   "vertebras": 13,
+   "regiones": {
+    "Cervical": 13
+   },
+   "evaluable": false
+  },
+  {
+   "id_especie": "CATAUR",
+   "nombre_comun": "Jote cabeza colorada",
+   "nombre_cientifico": "Cathartes aura",
+   "individuos": 1,
+   "vertebras": 13,
+   "regiones": {
+    "Cervical": 13
+   },
+   "evaluable": false
+  },
+  {
+   "id_especie": "LAGLAG",
+   "nombre_comun": "Lagópodo común",
+   "nombre_cientifico": "Lagopus lagopus",
+   "individuos": 1,
+   "vertebras": 13,
+   "regiones": {
+    "Cervical": 13
+   },
+   "evaluable": false
+  },
+  {
+   "id_especie": "GALGAL",
+   "nombre_comun": "Gallina",
+   "nombre_cientifico": "Gallus gallus domesticus",
+   "individuos": 1,
+   "vertebras": 12,
+   "regiones": {
+    "Cervical": 12
+   },
+   "evaluable": false
+  },
+  {
+   "id_especie": "VULGRY",
+   "nombre_comun": "Cóndor andino",
+   "nombre_cientifico": "Vultur gryphus",
+   "individuos": 1,
+   "vertebras": 1,
+   "regiones": {
+    "Cervical": 1
+   },
+   "evaluable": false
+  }
+ ],
+ "regiones": [
+  {
+   "region": "Cervical",
+   "codigo": "C",
+   "vertebras": 76
+  }
+ ]
+}
