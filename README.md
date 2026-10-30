@@ -26,7 +26,7 @@ pytest
 
 1. Cada malla se convierte en una nube de 15.000 puntos repartidos sobre la superficie. Para las referencias se guarda también la normal de la superficie en cada punto.
 2. La nube se centra y se gira a sus ejes principales, para que todas queden en una orientación parecida.
-3. **Etapa rápida:** la vértebra consultada se alinea con pocos puntos contra todas las de la base. Se prueban 24 orientaciones iniciales: los cuatro sentidos posibles de los ejes y además los casos en que los ejes quedan intercambiados (por ejemplo, cuando el largo y el ancho son parecidos).
+3. **Etapa rápida:** la vértebra consultada se alinea con pocos puntos contra todas las de la base (con más de 200, contra las 75 de tamaño más parecido). Se prueban 24 orientaciones iniciales: los cuatro sentidos posibles de los ejes y además los casos en que los ejes quedan intercambiados (por ejemplo, cuando el largo y el ancho son parecidos).
 4. **Etapa fina:** las 12 referencias más parecidas se realinean con más puntos y se mide la distancia media entre superficies, en mm.
 5. Los resultados se agrupan por especie y posición y se ordenan por distancia.
 
@@ -77,6 +77,19 @@ Cada posición se muestra como región más número dentro de la región:
 
 La región se acepta con o sin tilde y en mayúsculas o minúsculas. Si una fila aprobada tiene una región que no está en la lista, `indexar` se detiene e indica la fila, para que un error de tipeo no cree una clase aparte.
 
+Antes de indexar, conviene revisar la planilla y las mallas:
+
+```
+python -m vertebras verificar --metadata mis_datos/metadata.csv
+```
+
+`verificar` informa todos los problemas juntos, en tres niveles:
+- **Errores** (impiden indexar): columnas faltantes, regiones o posiciones mal escritas, archivos que no existen, mallas ilegibles, un individuo con dos especies.
+- **Avisos** (conviene revisar): unidades sospechosas (por ejemplo, un individuo cuyas vértebras miden la décima parte que las de otros de su especie, como pasa si está en cm), vértebras de tamaño raro para su posición, piezas sueltas, posiciones o ids repetidos, mallas con pocas caras.
+- **Información:** posiciones faltantes dentro de una región, especies con un solo individuo (no se pueden evaluar), piezas sueltas chicas.
+
+Termina con código de error si hay errores, y `--csv problemas.csv` guarda la lista. `--sin-mallas` revisa solo la planilla, en segundos. Como el umbral de piezas pegadas está en mm, conviene arreglar primero las unidades.
+
 ```
 python -m vertebras indexar --metadata mis_datos/metadata.csv --salida indice.npz --limpiar
 ```
@@ -101,6 +114,7 @@ Salida:
 - **Dist. (mm):** distancia media entre superficies después de alinear. Menor es más parecido.
 - **--umbral:** si la mejor distancia lo supera, avisa que puede no haber nada parecido en la base. El valor sugerido sale de `evaluar`.
 - **--limpiar:** igual que en `indexar`, quita piezas sueltas de la pieza consultada.
+- **--fragmento:** si a la pieza le falta una parte. Mide qué parte de cada referencia cubre la pieza y no penaliza el resto. Sin esta opción, una pieza incompleta se compara como si estuviera entera y los resultados empeoran mucho (en el piloto, de 68% a 27% de posición exacta). No conviene usarla con piezas enteras: empeora un poco (de 86% a 77% en el piloto).
 
 ### 4. Medir la precisión
 
@@ -115,7 +129,7 @@ También muestra una tabla por posición: cuántas consultas hubo, cuántas acer
 
 Las vértebras cuya especie y posición no aparecen en ningún otro individuo de la base no tienen respuesta posible. No se cuentan en los porcentajes y se listan aparte. Esto pasa, por ejemplo, si una especie tiene un solo individuo o si a un individuo le falta una posición.
 
-- `--recorte 0.3` elimina el 30% de cada pieza consultada, para simular fragmentos de excavación. Cada consulta usa siempre el mismo corte, así que las corridas se pueden comparar entre sí.
+- `--recorte 0.3` elimina el 30% de cada pieza consultada de un lado de un plano al azar, para simular fragmentos de excavación, y la evalúa como `identificar --fragmento`. Cada consulta usa siempre el mismo corte, así que las corridas se pueden comparar entre sí. El fragmento se vuelve a muestrear con tantos puntos como una pieza entera, igual que un archivo real.
 - `--muestra N` evalúa solo N vértebras al azar, para pruebas rápidas. Con pocas consultas el resultado varía mucho (ver "Resultados").
 - `--nucleos N` reparte las consultas en N procesos. Por defecto usa todos los núcleos. El resultado no depende de cuántos se usen.
 
@@ -140,6 +154,7 @@ vertebras/          paquete
   regiones.py       regiones y códigos de posición
   indice.py         construir, cargar y consultar el índice
   evaluacion.py     evaluación dejando un individuo afuera, en paralelo
+  verificacion.py   revisión de planilla y mallas antes de indexar
   sintetico.py      base de prueba
   cli.py            línea de comandos
 tests/              tests (pytest)
@@ -168,13 +183,27 @@ Vértebras cervicales de dos pavos (*Meleagris gallopavo*) tomografiados en estu
 | --- | --- | --- | --- | --- |
 | Original (scipy, 4 orientaciones) | 100% | 86.4% | 100% | 100% |
 | **Actual (Open3D punto a plano, 24 orientaciones)** | 100% | **86.4%** | **100%** | **100%** |
-| Original, fragmentos (30% menos) | 86.4% | 27.3% | 63.6% | 68.2% |
-| **Actual, fragmentos (30% menos)** | **95.5%** | **68.2%** | **86.4%** | **81.8%** |
+| Original, fragmentos (30% menos) | 95.5% | 27.3% | 72.7% | 68.2% |
+| **Actual, fragmentos (30% menos)** | **100%** | **68.2%** | **95.5%** | **90.9%** |
 
 - **La forma distingue la posición entre individuos distintos.** Con piezas enteras, los 3 errores son con la vértebra vecina (C7→C6, C8→C7, C11→C12), todos en la mitad del cuello, donde las vértebras más se parecen entre sí.
 - **Con fragmentos, la configuración actual mantiene la mayoría de los aciertos;** la original pierde dos tercios.
-- **Es una muestra muy chica:** 22 consultas, con una sola referencia correcta para cada una. Cada consulta que cambia mueve el resultado 4.5 puntos. Con fragmentos, dos preparaciones casi iguales de las mallas dieron 68% y 73% de posición exacta.
+- **Es una muestra muy chica:** 22 consultas, con una sola referencia correcta para cada una. Cada consulta que cambia mueve el resultado 4.5 puntos.
 - **Acertar la especie acá es fácil**, porque los distractores son bastante más chicos que el pavo.
+
+### Bases grandes
+
+Con más de 200 referencias disponibles, la búsqueda alinea solo contra las 75 de tamaño más parecido (largo, ancho y alto en los ejes principales). Se probó en una base sintética de 845 vértebras de 12 especies, con 100 consultas:
+
+| Variante | Posición exacta, entera | Posición exacta, fragmentos | Tiempo por consulta (1 núcleo) |
+| --- | --- | --- | --- |
+| Búsqueda completa | 16% | 9% | 40–51 s |
+| Preselección anterior (150, descriptor de forma) | 15% | 8% | 8–9.5 s |
+| **Preselección actual (75, por tamaño)** | **16%** | **8%** | **~4.8 s** |
+
+- **La preselección no pierde aciertos con piezas enteras y pierde como mucho uno de 100 con fragmentos,** a una décima parte del tiempo. El tiempo por consulta ya no crece con el tamaño de la base.
+- **El tamaño solo funcionó mejor que el descriptor de forma anterior** y que una prealineación barata. Entre las primeras 75, con piezas enteras, aparece una referencia correcta casi siempre.
+- La precisión es baja porque esta base tiene muchas especies parecidas a propósito; lo que se compara es cuánto pierde la preselección.
 
 ### Datos sintéticos
 
@@ -191,6 +220,8 @@ Vértebras cervicales de dos pavos (*Meleagris gallopavo*) tomografiados en estu
 | **Actual: Open3D punto a plano, 24 orientaciones, 4 núcleos** | **51.2%** | **31.4%** | **40.7%** | **55.2%** | **257 s** |
 
 #### Fragmentos (30% de la pieza eliminado)
+
+Las filas de esta tabla se midieron con la simulación anterior de fragmentos, que era optimista: la parte cubierta se estimaba por la cantidad de puntos, y eso solo funciona con fragmentos simulados. Con la simulación actual, que trata el fragmento como un archivo real, la configuración actual da **47.7% de especie, 22.1% de posición exacta, 32.6% de ±1 y 37.8% entre las 3 primeras**. Las comparaciones entre filas siguen valiendo.
 
 | Configuración | Especie | Posición exacta | Posición ±1 | Entre las 3 primeras |
 | --- | --- | --- | --- | --- |
@@ -238,7 +269,7 @@ Normalizar el tamaño (prueba anterior, con 25 consultas) dio 12% de especie y 1
 - **Las vértebras sintéticas son simétricas izquierda-derecha y también craneal-caudal**, así que girarlas 180° da la misma forma. Con ellas no se puede probar si el método distingue el extremo craneal del caudal.
 - **`--limpiar` decide por distancia a la pieza principal.** Una vértebra que llegue partida en piezas separadas por más de 0.5 mm perdería las piezas menores; por eso informa cuánto quitó de cada malla.
 - **Velocidad.** `evaluar` tarda ~1.5 s por consulta con 4 núcleos. `identificar` procesa una sola consulta en un núcleo y tarda unos 9 s con 170 referencias, contando la carga del índice. Casi todo el tiempo se va en la etapa rápida (24 orientaciones × cada referencia) y crece en proporción al tamaño de la base.
-- La preselección con descriptor barato, que se activa en bases de más de 400 vértebras, funcionó mal en las pruebas y hay que reemplazarla. Con bases grandes también va a hacer falta para la velocidad.
+- **Un fragmento hay que marcarlo como tal** (`--fragmento`). El método no lo detecta solo: la estimación automática empeoraba las piezas enteras.
 - "Posición ±1" no cruza el límite entre regiones: confundir la última cervical con la primera torácica cuenta como error.
 - No usa landmarks ni medidas con calibre; solo la superficie.
 - Las probabilidades no están calibradas.
@@ -248,8 +279,7 @@ Normalizar el tamaño (prueba anterior, con 25 consultas) dio 12% de especie y 1
 
 1. Escanear 3 o más individuos de una misma especie con el escáner propio (la región cervical alcanza, unos 40 escaneos) y repetir el piloto.
 2. Según los resultados, sumar landmarks o medidas como información adicional.
-3. Reemplazar la preselección por descriptor, para bases grandes.
-4. Acelerar una consulta individual (repartir la etapa rápida entre núcleos, o preseleccionar antes de alinear).
+3. Un servidor que reciba el archivo y use este paquete, y una página web para el celular (hay un prototipo de las pantallas).
 
 ### Para la app
 

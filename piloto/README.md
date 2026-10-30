@@ -46,8 +46,10 @@ Para la configuración original, agregar `--motor scipy --orientaciones 4` a `ev
 | --- | --- | --- | --- | --- |
 | Original (scipy, 4 orientaciones) | 100% | 86.4% | 100% | 100% |
 | **Actual (Open3D punto a plano, 24 orientaciones)** | 100% | **86.4%** | **100%** | **100%** |
-| Original, fragmentos (30% menos) | 86.4% | 27.3% | 63.6% | 68.2% |
-| **Actual, fragmentos (30% menos)** | **95.5%** | **68.2%** | **86.4%** | **81.8%** |
+| Original, fragmentos (30% menos) | 95.5% | 27.3% | 72.7% | 68.2% |
+| **Actual, fragmentos (30% menos)** | **100%** | **68.2%** | **95.5%** | **90.9%** |
+
+Los fragmentos se evalúan como `identificar --fragmento`. Sin esa opción, un fragmento real se compara como si estuviera entero y la configuración actual baja a 27% de posición exacta.
 
 Por posición, configuración actual y piezas enteras:
 
@@ -63,10 +65,10 @@ Por posición, configuración actual y piezas enteras:
 ## Qué se puede concluir
 
 - **La forma distingue la posición entre dos individuos distintos**, aunque se tomografiaron en estudios distintos y uno vino en otra unidad. Con piezas enteras, todos los errores son con la vértebra vecina, en la mitad del cuello, y en esos casos la posición correcta queda segunda, a 0.03 mm o menos.
-- **Con fragmentos hace falta la configuración actual.** La original baja a 27% de posición exacta y comete errores grandes (una C13 identificada como C4).
+- **Con fragmentos hace falta la configuración actual.** La original baja a 27% de posición exacta y comete errores de hasta 9 posiciones.
 
 ## Qué no se puede concluir
 
-- **La muestra es muy chica.** Son 22 consultas, cada una con una sola referencia correcta. Una consulta que cambia mueve el resultado 4.5 puntos. El 86% de posición exacta tiene un intervalo de confianza de aproximadamente 65–97%. Con fragmentos, dos preparaciones casi iguales de las mallas dieron 68% y 73%.
+- **La muestra es muy chica.** Son 22 consultas, cada una con una sola referencia correcta. Una consulta que cambia mueve el resultado 4.5 puntos. El 86% de posición exacta tiene un intervalo de confianza de aproximadamente 65–97%.
 - **Acertar la especie es fácil acá:** los pavos miden 20–35 mm y los distractores son más chicos. No prueba que se distingan especies de tamaño parecido.
 - **Son tomografías.** Falta probar con el escáner de superficie propio.
