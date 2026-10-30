@@ -8,7 +8,7 @@ Subcomandos:
   identificar  Compara un modelo 3D contra el índice y muestra candidatas.
   evaluar      Prueba "dejando un individuo afuera" y mide la precisión.
 
-Requiere: numpy, scipy. Opcional: trimesh (para leer más formatos de malla).
+Requiere: numpy, scipy, open3d, trimesh.
 """
 
 import argparse
@@ -28,114 +28,36 @@ N_FINO = 2000            # puntos usados en la alineación fina
 N_FINALISTAS = 12        # candidatas que pasan a la etapa fina
 MAX_SIN_PRESELECCION = 400   # con bases más grandes se preselecciona con un descriptor barato
 N_PRESELECCION = 150
-RECORTE_ICP = 0.9        # fracción de pares más cercanos usados en cada paso del ICP
+RECORTE_ICP = 0.9        # fracción de pares más cercanos usados en cada paso del ICP (motor scipy)
+# Motor open3d: distancia máxima de correspondencia, como fracción del radio medio de la referencia
+UMBRAL_GRUESO = 0.5
+UMBRAL_FINO = 0.15
 
 
 # ---------------------------------------------------------------------------
 # Lectura y escritura de mallas
 # ---------------------------------------------------------------------------
 
+_FORMATOS_O3D = (".ply", ".obj", ".stl", ".off", ".gltf", ".glb")
+
+
 def leer_malla(ruta):
-    """Devuelve (vertices Nx3, caras Mx3 o None)."""
-    try:
-        import trimesh  # noqa: F401
-        m = trimesh.load(ruta, force="mesh", process=False)
-        caras = np.asarray(m.faces) if len(getattr(m, "faces", [])) else None
-        return np.asarray(m.vertices, dtype=float), caras
-    except ImportError:
-        pass
-    ext = os.path.splitext(ruta)[1].lower()
-    if ext == ".obj":
-        return _leer_obj(ruta)
-    if ext == ".ply":
-        return _leer_ply(ruta)
-    raise ValueError(f"Formato no soportado sin trimesh: {ruta}")
-
-
-def _leer_obj(ruta):
-    v, f = [], []
-    with open(ruta, encoding="utf-8", errors="ignore") as fh:
-        for linea in fh:
-            p = linea.split()
-            if not p:
-                continue
-            if p[0] == "v":
-                v.append([float(x) for x in p[1:4]])
-            elif p[0] == "f":
-                idx = [int(x.split("/")[0]) for x in p[1:]]
-                idx = [i - 1 if i > 0 else len(v) + i for i in idx]
-                for k in range(1, len(idx) - 1):          # triangula polígonos
-                    f.append([idx[0], idx[k], idx[k + 1]])
-    return np.array(v, float), (np.array(f, int) if f else None)
-
-
-_TIPOS_PLY = {"char": "b", "int8": "b", "uchar": "B", "uint8": "B",
-              "short": "h", "int16": "h", "ushort": "H", "uint16": "H",
-              "int": "i", "int32": "i", "uint": "I", "uint32": "I",
-              "float": "f", "float32": "f", "double": "d", "float64": "d"}
-
-
-def _leer_ply(ruta):
-    with open(ruta, "rb") as fh:
-        if fh.readline().strip() != b"ply":
-            raise ValueError("No es un PLY")
-        formato, elementos, actual = None, [], None
-        while True:
-            linea = fh.readline().decode("ascii", "ignore").strip()
-            p = linea.split()
-            if not p:
-                continue
-            if p[0] == "format":
-                formato = p[1]
-            elif p[0] == "element":
-                actual = {"nombre": p[1], "n": int(p[2]), "props": []}
-                elementos.append(actual)
-            elif p[0] == "property":
-                if p[1] == "list":
-                    actual["props"].append(("list", p[4], p[2], p[3]))
-                else:
-                    actual["props"].append(("esc", p[2], p[1]))
-            elif p[0] == "end_header":
-                break
-        datos = {}
-        if formato == "ascii":
-            for el in elementos:
-                filas = []
-                for _ in range(el["n"]):
-                    vals = fh.readline().split()
-                    fila, k = {}, 0
-                    for pr in el["props"]:
-                        if pr[0] == "esc":
-                            fila[pr[1]] = float(vals[k]); k += 1
-                        else:
-                            cnt = int(vals[k]); k += 1
-                            fila[pr[1]] = [int(x) for x in vals[k:k + cnt]]; k += cnt
-                    filas.append(fila)
-                datos[el["nombre"]] = filas
-        else:
-            end = "<" if formato == "binary_little_endian" else ">"
-            for el in elementos:
-                filas = []
-                for _ in range(el["n"]):
-                    fila = {}
-                    for pr in el["props"]:
-                        if pr[0] == "esc":
-                            t = _TIPOS_PLY[pr[2]]
-                            fila[pr[1]] = struct.unpack(end + t, fh.read(struct.calcsize(t)))[0]
-                        else:
-                            tc, ti = _TIPOS_PLY[pr[2]], _TIPOS_PLY[pr[3]]
-                            cnt = struct.unpack(end + tc, fh.read(struct.calcsize(tc)))[0]
-                            fila[pr[1]] = list(struct.unpack(end + ti * cnt,
-                                                             fh.read(struct.calcsize(ti) * cnt)))
-                    filas.append(fila)
-                datos[el["nombre"]] = filas
-    vert = np.array([[r["x"], r["y"], r["z"]] for r in datos.get("vertex", [])], float)
-    caras = []
-    for r in datos.get("face", []):
-        idx = r.get("vertex_indices", r.get("vertex_index"))
-        for k in range(1, len(idx) - 1):
-            caras.append([idx[0], idx[k], idx[k + 1]])
-    return vert, (np.array(caras, int) if caras else None)
+    """Devuelve (vertices Nx3, caras Mx3 o None). Usa Open3D para PLY, OBJ, STL, OFF y glTF
+    (el orden de los vértices puede cambiar, la geometría no) y trimesh para el resto."""
+    if not os.path.isfile(ruta):
+        raise FileNotFoundError(ruta)
+    if os.path.splitext(ruta)[1].lower() in _FORMATOS_O3D:
+        m = _o3d().io.read_triangle_mesh(ruta)
+        v, f = np.asarray(m.vertices, dtype=float), np.asarray(m.triangles, dtype=int)
+        if len(v):
+            return v, (f if len(f) else None)
+    import trimesh                      # Open3D no lo entendió, o es otro formato
+    m = trimesh.load(ruta, force="mesh", process=False)
+    caras = np.asarray(m.faces, dtype=int) if len(getattr(m, "faces", [])) else None
+    v = np.asarray(m.vertices, dtype=float)
+    if not len(v):
+        raise ValueError(f"No se pudo leer la malla: {ruta}")
+    return v, caras
 
 
 def escribir_ply(ruta, v, f):
@@ -153,28 +75,48 @@ def escribir_ply(ruta, v, f):
 # Preprocesamiento
 # ---------------------------------------------------------------------------
 
-def muestrear_superficie(v, f, n, rng):
-    """Muestrea n puntos repartidos uniformemente sobre la superficie."""
+def muestrear_superficie(v, f, n, rng, normales=False):
+    """Muestrea n puntos repartidos uniformemente sobre la superficie.
+    Con normales=True devuelve además la normal (unitaria) del triángulo de cada punto,
+    o None si la malla no tiene caras."""
     if f is None or len(f) == 0:
         idx = rng.choice(len(v), size=n, replace=len(v) < n)
-        return v[idx]
+        return (v[idx], None) if normales else v[idx]
     a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
-    areas = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+    cruz = np.cross(b - a, c - a)
+    areas = 0.5 * np.linalg.norm(cruz, axis=1)
     tri = rng.choice(len(f), size=n, p=areas / areas.sum())
     u, w = rng.random(n), rng.random(n)
     fuera = u + w > 1
     u[fuera], w[fuera] = 1 - u[fuera], 1 - w[fuera]
-    return a[tri] + u[:, None] * (b[tri] - a[tri]) + w[:, None] * (c[tri] - a[tri])
+    p = a[tri] + u[:, None] * (b[tri] - a[tri]) + w[:, None] * (c[tri] - a[tri])
+    if not normales:
+        return p
+    return p, cruz[tri] / (2 * areas[tri, None])
+
+
+def ejes_pca(p):
+    """Centro y ejes principales (columnas, mayor varianza primero, rotación propia)."""
+    centro = p.mean(axis=0)
+    val, vec = np.linalg.eigh(np.cov((p - centro).T))
+    vec = vec[:, np.argsort(val)[::-1]]
+    if np.linalg.det(vec) < 0:
+        vec[:, 2] *= -1
+    return centro, vec
 
 
 def a_marco_pca(p):
     """Centra la nube y la rota a sus ejes principales (mayor varianza primero)."""
-    p = p - p.mean(axis=0)
-    val, vec = np.linalg.eigh(np.cov(p.T))
-    vec = vec[:, np.argsort(val)[::-1]]
-    if np.linalg.det(vec) < 0:
-        vec[:, 2] *= -1
-    return p @ vec
+    centro, vec = ejes_pca(p)
+    return (p - centro) @ vec
+
+
+def estimar_normales(p, k=30):
+    """Normales por vecinos cercanos, para nubes sin caras."""
+    o3d = _o3d()
+    nube = _nube(p)
+    nube.estimate_normals(o3d.geometry.KDTreeSearchParamKNN(k))
+    return np.asarray(nube.normals)
 
 
 def descriptor(p, rng, bins=24):
@@ -186,13 +128,20 @@ def descriptor(p, rng, bins=24):
     return np.concatenate([np.log(ext + 1e-9), hist / bins])
 
 
-def preparar(ruta, rng, recorte=0.0):
+def preparar(ruta, rng, recorte=0.0, normales=False):
+    """Nube de puntos en el marco PCA y su descriptor. Con normales=True devuelve también
+    las normales en ese marco (las necesita el ICP punto a plano en las referencias)."""
     v, f = leer_malla(ruta)
-    p = muestrear_superficie(v, f, N_DENSO, rng)
+    p, n = muestrear_superficie(v, f, N_DENSO, rng, normales=True)
     if recorte > 0:
         p = recortar(p, recorte, rng)
-    p = a_marco_pca(p)
-    return p.astype(np.float32), descriptor(p, rng)
+        n = None
+    centro, vec = ejes_pca(p)
+    p = (p - centro) @ vec
+    if not normales:
+        return p.astype(np.float32), descriptor(p, rng)
+    n = estimar_normales(p) if n is None else n @ vec
+    return p.astype(np.float32), n.astype(np.float32), descriptor(p, rng)
 
 
 def recortar(p, fraccion, rng):
@@ -260,12 +209,25 @@ def alinear_grueso(q, ref):
     return arbol.query(x)[0].mean(), (r @ g, t)
 
 
-def comparar_fino(q, ref, transf):
-    """Etapa fina: refina la alineación y mide la distancia media entre superficies (mm)."""
+def alinear_fino(q, ref, transf):
+    """Refina la alineación con ICP (20 pasos, N_FINO puntos de la consulta)."""
     r0, t0 = transf
+    x = _icp(q[:N_FINO] @ r0.T + t0, ref, cKDTree(ref), 20)
+    return _kabsch(q[:N_FINO], x)
+
+
+def comparar_fino(q, ref, transf, normales=None, cache=None):
+    """Etapa fina: refina la alineación y mide la distancia media entre superficies (mm)."""
+    if MOTOR == "open3d":
+        r, t = alinear_fino_o3d(q, ref, transf, normales, cache)
+    else:
+        r, t = alinear_fino(q, ref, transf)
+    return distancia_superficies(q, ref, r, t)
+
+
+def distancia_superficies(q, ref, r, t):
+    """Distancia media simétrica (mm) entre la consulta transformada y la referencia."""
     arbol_ref = cKDTree(ref)
-    x = _icp(q[:N_FINO] @ r0.T + t0, ref, arbol_ref, 20)
-    r, t = _kabsch(q[:N_FINO], x)
     qa = q @ r.T + t
     d1 = arbol_ref.query(qa[:N_FINO])[0]                  # consulta -> referencia
     d2 = cKDTree(qa).query(ref[:N_FINO])[0]               # referencia -> consulta
@@ -276,26 +238,102 @@ def comparar_fino(q, ref, transf):
 
 
 # ---------------------------------------------------------------------------
+# Motor Open3D: mismas etapas, con el ICP de Open3D (punto a punto o punto a plano)
+# ---------------------------------------------------------------------------
+
+MOTOR = "scipy"          # "scipy" (ICP propio con recorte de pares) u "open3d"
+ICP = "plano"            # con open3d: "punto" (punto a punto) o "plano" (punto a plano)
+
+
+def _o3d():
+    import open3d as o3d
+    o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
+    return o3d
+
+
+def _nube(p, n=None):
+    o3d = _o3d()
+    nube = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.asarray(p, dtype=np.float64)))
+    if n is not None:
+        nube.normals = o3d.utility.Vector3dVector(np.asarray(n, dtype=np.float64))
+    return nube
+
+
+def _homogenea(r, t):
+    m = np.eye(4)
+    m[:3, :3], m[:3, 3] = r, t
+    return m
+
+
+def _icp_o3d(fuente, destino, inicial, umbral, iters):
+    reg = _o3d().pipelines.registration
+    est = (reg.TransformationEstimationPointToPlane() if ICP == "plano"
+           else reg.TransformationEstimationPointToPoint())
+    crit = reg.ICPConvergenceCriteria(relative_fitness=1e-7, relative_rmse=1e-7, max_iteration=iters)
+    return reg.registration_icp(fuente, destino, umbral, inicial, est, crit).transformation
+
+
+def _ref_o3d(ref, normales, cache):
+    """Nubes Open3D de una referencia (gruesa y completa), su árbol y su escala. Se guardan
+    en `cache` para no reconstruirlas en cada consulta."""
+    if cache is not None and "nube" in cache:
+        return cache
+    if normales is None:
+        normales = estimar_normales(ref)
+    rs = ref[:N_GRUESO * 4]
+    c = {"nube": _nube(ref, normales), "gruesa": _nube(rs, normales[:N_GRUESO * 4]),
+         "arbol_grueso": cKDTree(rs), "escala": float(np.sqrt((ref ** 2).sum(axis=1).mean()))}
+    if cache is not None:
+        cache.update(c)
+    return c
+
+
+def alinear_grueso_o3d(q, ref, normales=None, cache=None):
+    """Como alinear_grueso, con el ICP de Open3D."""
+    c = _ref_o3d(ref, normales, cache)
+    qs = q[:N_GRUESO]
+    fuente, arbol = _nube(qs), c["arbol_grueso"]
+    umbral = UMBRAL_GRUESO * c["escala"]
+    mejor = (np.inf, None)
+    for g in GIROS[N_ORIENTACIONES]:
+        m = _icp_o3d(fuente, c["gruesa"], _homogenea(g, np.zeros(3)), umbral, 4)
+        d = arbol.query(qs @ m[:3, :3].T + m[:3, 3])[0].mean()
+        if d < mejor[0]:
+            mejor = (d, m)
+    m = _icp_o3d(fuente, c["gruesa"], mejor[1], umbral, 8)
+    r, t = m[:3, :3], m[:3, 3]
+    return arbol.query(qs @ r.T + t)[0].mean(), (r, t)
+
+
+def alinear_fino_o3d(q, ref, transf, normales=None, cache=None):
+    """Como alinear_fino, con el ICP de Open3D."""
+    c = _ref_o3d(ref, normales, cache)
+    m = _icp_o3d(_nube(q[:N_FINO]), c["nube"], _homogenea(*transf), UMBRAL_FINO * c["escala"], 20)
+    return m[:3, :3], m[:3, 3]
+
+
+# ---------------------------------------------------------------------------
 # Índice
 # ---------------------------------------------------------------------------
 
 def indexar(args):
     rng = np.random.default_rng(0)
     base = os.path.dirname(os.path.abspath(args.metadata))
-    puntos, descs, etiquetas = [], [], []
+    puntos, normales, descs, etiquetas = [], [], [], []
     with open(args.metadata, newline="", encoding="utf-8") as fh:
         filas = list(csv.DictReader(fh))
     for fila in filas:
         if fila.get("aprobado", "Sí").strip().lower() in ("no", "false", "0"):
             continue
         ruta = os.path.join(base, fila["archivo_liviano"])
-        p, d = preparar(ruta, rng)
-        puntos.append(p); descs.append(d)
+        p, n, d = preparar(ruta, rng, normales=True)
+        puntos.append(p); normales.append(n); descs.append(d)
         etiquetas.append((fila["id_especie"], fila["id_individuo"], fila["region"],
                           int(fila["posicion"]), fila.get("id_escaneo", "")))
         print(f"  {fila['archivo_liviano']}", file=sys.stderr)
     descs = np.array(descs)
     np.savez_compressed(args.salida, puntos=np.array(puntos, dtype=object),
+                        normales=np.array(normales, dtype=object),
                         descs=descs, media=descs.mean(0), desv=descs.std(0) + 1e-9,
                         etiquetas=np.array(etiquetas, dtype=object))
     print(f"Índice con {len(puntos)} vértebras guardado en {args.salida}")
@@ -303,8 +341,13 @@ def indexar(args):
 
 def cargar_indice(ruta):
     z = np.load(ruta, allow_pickle=True)
-    return {"puntos": [np.asarray(x, dtype=np.float64) for x in z["puntos"]], "descs": z["descs"], "media": z["media"],
-            "desv": z["desv"], "etiquetas": [tuple(e) for e in z["etiquetas"]]}
+    puntos = [np.asarray(x, dtype=np.float64) for x in z["puntos"]]
+    # los índices viejos no tienen normales: se estiman al usarlas
+    normales = ([np.asarray(x, dtype=np.float64) for x in z["normales"]] if "normales" in z.files
+                else [None] * len(puntos))
+    return {"puntos": puntos, "normales": normales, "descs": z["descs"], "media": z["media"],
+            "desv": z["desv"], "etiquetas": [tuple(e) for e in z["etiquetas"]],
+            "cache": [dict() for _ in puntos]}
 
 
 def buscar(q, dq, ind, excluir=None, top=5):
@@ -314,10 +357,15 @@ def buscar(q, dq, ind, excluir=None, top=5):
         z = (ind["descs"][validos] - ind["media"]) / ind["desv"]
         zq = (dq - ind["media"]) / ind["desv"]
         validos = [validos[o] for o in np.argsort(np.linalg.norm(z - zq, axis=1))[:N_PRESELECCION]]
-    gruesos = sorted((alinear_grueso(q, ind["puntos"][i]) + (i,) for i in validos), key=lambda x: x[0])
+    if MOTOR == "open3d":
+        gruesos = [alinear_grueso_o3d(q, ind["puntos"][i], ind["normales"][i], ind["cache"][i]) + (i,)
+                   for i in validos]
+    else:
+        gruesos = [alinear_grueso(q, ind["puntos"][i]) + (i,) for i in validos]
+    gruesos.sort(key=lambda x: x[0])
     por_etiqueta = {}
     for _, transf, i in gruesos[:N_FINALISTAS]:
-        dist = comparar_fino(q, ind["puntos"][i], transf)
+        dist = comparar_fino(q, ind["puntos"][i], transf, ind["normales"][i], ind["cache"][i])
         e = ind["etiquetas"][i]
         clave = (e[0], e[2], e[3])                      # especie, región, posición
         if dist < por_etiqueta.get(clave, (np.inf,))[0]:
@@ -336,8 +384,8 @@ def codigo(region, pos):
 
 
 def identificar(args):
-    global N_ORIENTACIONES
-    N_ORIENTACIONES = args.orientaciones
+    global N_ORIENTACIONES, MOTOR, ICP
+    N_ORIENTACIONES, MOTOR, ICP = args.orientaciones, args.motor, args.icp
     rng = np.random.default_rng(1)
     ind = cargar_indice(args.indice)
     q, dq = preparar(args.modelo, rng)
@@ -355,8 +403,8 @@ def identificar(args):
 
 def evaluar(args):
     """Deja afuera un individuo entero por vez y trata de ubicar sus vértebras con el resto."""
-    global N_ORIENTACIONES
-    N_ORIENTACIONES = args.orientaciones
+    global N_ORIENTACIONES, MOTOR, ICP
+    N_ORIENTACIONES, MOTOR, ICP = args.orientaciones, args.motor, args.icp
     rng = np.random.default_rng(2)
     ind = cargar_indice(args.indice)
     total = esp_ok = exacta = mas_menos1 = top3 = 0
@@ -386,7 +434,8 @@ def evaluar(args):
         if any(r[0] == (e[0], e[2], e[3]) for r in res):
             top3 += 1
     print(f"\nEvaluación dejando un individuo afuera ({total} vértebras, "
-          f"recorte {args.recorte:.0%}, {args.orientaciones} orientaciones, {time.time() - t0:.0f} s)\n")
+          f"recorte {args.recorte:.0%}, {args.orientaciones} orientaciones, motor {args.motor}"
+          f"{'/' + args.icp if args.motor == 'open3d' else ''}, {time.time() - t0:.0f} s)\n")
     print(f"  Especie correcta:            {esp_ok / total:6.1%}")
     print(f"  Posición exacta:             {exacta / total:6.1%}")
     print(f"  Posición con error ±1:       {mas_menos1 / total:6.1%}")
@@ -513,6 +562,9 @@ def main():
     s.add_argument("--umbral", type=float, default=None, help="distancia en mm (sale de 'evaluar')")
     s.add_argument("--orientaciones", type=int, choices=(4, 24), default=N_ORIENTACIONES,
                    help="orientaciones iniciales de la alineación rápida")
+    s.add_argument("--motor", choices=("scipy", "open3d"), default=MOTOR, help="implementación del ICP")
+    s.add_argument("--icp", choices=("punto", "plano"), default=ICP,
+                   help="con --motor open3d: ICP punto a punto o punto a plano")
     s.set_defaults(func=identificar)
 
     s = sub.add_parser("evaluar", help="medir precisión dejando un individuo afuera")
@@ -523,6 +575,9 @@ def main():
                    help="evaluar solo N vértebras al azar (más rápido)")
     s.add_argument("--orientaciones", type=int, choices=(4, 24), default=N_ORIENTACIONES,
                    help="orientaciones iniciales de la alineación rápida")
+    s.add_argument("--motor", choices=("scipy", "open3d"), default=MOTOR, help="implementación del ICP")
+    s.add_argument("--icp", choices=("punto", "plano"), default=ICP,
+                   help="con --motor open3d: ICP punto a punto o punto a plano")
     s.set_defaults(func=evaluar)
 
     args = ap.parse_args()
