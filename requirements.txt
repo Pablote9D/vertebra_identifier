@@ -1,0 +1,6 @@
+# Probado con numpy 2.5, scipy 1.18, open3d 0.20 y trimesh 5.2 (Python 3.13).
+# En Linux, Open3D necesita además la librería del sistema libEGL (apt install libegl1).
+numpy>=1.24
+scipy>=1.10
+open3d>=0.18
+trimesh>=4.0
